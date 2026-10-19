@@ -10,7 +10,7 @@ import { EventEmitter } from "node:events";
 import { appendFileSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server as HttpServer, type ServerResponse } from "node:http";
 import { dirname } from "node:path";
-import type { BridgeConfig, BridgeReading, BridgeReportResponse, BridgeStatus } from "@ccusage/core";
+import type { BridgeAuthFingerprint, BridgeConfig, BridgeReading, BridgeReportResponse, BridgeStatus } from "@ccusage/core";
 import { bridgeConfigPath, bridgeSocketPath } from "./settings.js";
 
 const MAX_BODY_BYTES = 1_048_576;
@@ -88,6 +88,22 @@ export function normalizeBridgeReading(input: unknown, now = Date.now()): Bridge
   const rawCost = isObject(input.cost) ? input.cost : undefined;
   const usd = rawCost ? toFiniteNumber(rawCost.usd) : undefined;
   if (usd !== undefined) reading.cost = { usd };
+  const rawAuth = isObject(input.auth) ? input.auth : undefined;
+  if (rawAuth) {
+    const credential =
+      rawAuth.credential === "managedKey" ||
+      rawAuth.credential === "oauthToken" ||
+      rawAuth.credential === "authToken" ||
+      rawAuth.credential === "apiKey" ||
+      rawAuth.credential === "apiKeyHelper" ||
+      rawAuth.credential === "unknown"
+        ? rawAuth.credential
+        : "unknown";
+    const auth: BridgeAuthFingerprint = { credential };
+    if (typeof rawAuth.baseUrlHost === "string") auth.baseUrlHost = rawAuth.baseUrlHost;
+    if (rawAuth.thirdPartyBase === true) auth.thirdPartyBase = true;
+    reading.auth = auth;
+  }
   return reading;
 }
 

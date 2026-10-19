@@ -91,7 +91,11 @@ export function classifyEntryAuth(entry: UsageEntry): AuthMode {
  * sessions; for mixed sessions drop only the entries that look third-party. Third-party
  * sessions are excluded entirely (their usage does not consume the 5h/7d subscription limits).
  */
-export function filterSubscriptionEntries(entries: readonly UsageEntry[]): UsageEntry[] {
+export function filterSubscriptionEntries(
+  entries: readonly UsageEntry[],
+  /** Authoritative per-session verdicts (e.g. reported by the mod); heuristic applies otherwise. */
+  sessionAuth?: ReadonlyMap<string, AuthMode>,
+): UsageEntry[] {
   const bySession = new Map<string, UsageEntry[]>();
   for (const entry of entries) {
     const group = bySession.get(entry.sessionId);
@@ -100,7 +104,8 @@ export function filterSubscriptionEntries(entries: readonly UsageEntry[]): Usage
   }
   const kept = new Set<UsageEntry>();
   for (const sessionEntries of bySession.values()) {
-    const mode = classifySessionAuth(sessionEntries);
+    const override = sessionAuth?.get(sessionEntries[0]?.sessionId ?? "");
+    const mode = override ?? classifySessionAuth(sessionEntries);
     if (mode === "subscription" || mode === "unknown") {
       for (const entry of sessionEntries) kept.add(entry);
     } else if (mode === "mixed") {

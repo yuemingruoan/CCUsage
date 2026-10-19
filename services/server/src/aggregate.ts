@@ -4,6 +4,7 @@
 
 import { buildQuotaSnapshotFromData, planChanges as planChangesFromHistory } from "@ccusage/core";
 import type {
+  AuthMode,
   PlanChange,
   PlanInfo,
   QuotaObservation,
@@ -26,6 +27,8 @@ export interface QuotaData {
   observations: QuotaObservation[];
   plan?: PlanInfo;
   planChanges: PlanChange[];
+  /** Explicit per-session auth verdicts reported by clients. */
+  sessionAuth?: ReadonlyMap<string, AuthMode>;
 }
 
 /** Loads everything buildQuotaSnapshotFromData needs for one account. */

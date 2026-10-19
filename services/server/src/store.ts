@@ -726,6 +726,21 @@ export class SyncStore {
     return [...meta.values()].sort((a, b) => b.end - a.end).slice(0, limit);
   }
 
+  // MARK: - Session auth
+
+  /** Explicit auth verdicts reported by clients (mod fingerprint / heuristic). */
+  sessionAuthModes(accountId: string): Map<string, "subscription" | "thirdParty" | "mixed" | "unknown"> {
+    const rows = this.db
+      .prepare("SELECT id, auth_mode FROM sessions WHERE account_id = ? AND auth_mode IS NOT NULL")
+      .all(accountId) as SqlRow[];
+    const modes = new Map<string, "subscription" | "thirdParty" | "mixed" | "unknown">();
+    for (const row of rows) {
+      const mode = str(row.auth_mode);
+      if (mode === "subscription" || mode === "thirdParty" || mode === "mixed" || mode === "unknown") modes.set(str(row.id), mode);
+    }
+    return modes;
+  }
+
   // MARK: - Plan
 
   plan(accountId: string): PlanInfo | undefined {

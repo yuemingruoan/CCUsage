@@ -14,7 +14,7 @@
 
 - npm install：100 包（electron 44.9.0 / react 19 / express 5 / esbuild / tsx / typescript）。
 - npm run build：gen:mod + core(tsc) + server(tsc) + desktop(esbuild 5/5 entries) 全绿。
-- npm test：112 tests / 112 pass（core 63、server 42、mod 7）。
+- npm test：113 tests / 113 pass（core 64、server 42、mod 7）。
 - npm run smoke:mod：真实 register.ts + 假 engine + 真 Unix socket 服务，6 次推送 / 1 条回退日志，刷新/measure/refreshId/reportNow/回退全部验证。
 - npm run parity：125 files, 48191 requests, 86 sessions, total $6327.55 —— 与原 Swift 版报告逐字节一致（PARITY OK）。
 - npm run screenshot：本地起服务端 + 2 设备播种 + Electron 截图；main.png / settings.png / tray.png 均非空（含 2 台设备徽标、服务端额度、设备表）。
@@ -43,6 +43,18 @@
   Windows 上走第三方 API 的 claude-* 请求不再虚增订阅额度；
 - authMode 随 SyncSessionMeta 同步到服务端 sessions 表，服务端对旧客户端也可用条目聚合兜底判定；
 - 新增 packages/core/test/auth.test.ts（5 个用例）。
+
+## 权威 auth 指纹（mod 上报，2026-10-19）
+
+- 针对「中转商反代官方 Claude，响应内容/模型名/请求 ID/价格全部与订阅一致」的情况：
+  仅凭 transcript 无法区分，改用 Claude Code 进程内的权威信号；
+- mod 每个 session 读取 ANTHROPIC_BASE_URL / ANTHROPIC_AUTH_TOKEN / ANTHROPIC_API_KEY /
+  CLAUDE_CODE_OAUTH_TOKEN 以及合并设置里的 env / apiKeyHelper，随每次 bridge 上报 auth 指纹；
+- 应用把指纹作为权威判定覆盖启发式（自定义 BASE_URL 或 API-key/token/helper = 第三方；
+  /login managed key + *.anthropic.com = 订阅），持久化到 session-auth.json；
+- 指纹随 SessionMeta.authMode 同步；服务端 quota 使用 sessions.auth_mode 覆盖；
+- 仍无法区分的极端情况：中转注入 OAuth token 且保持官方 host（此时消耗的是该账号的订阅额度，
+  需要比较 oauthAccount 身份才能判定「谁」的订阅，留作下一步）。
 
 ## 打包产物（npm run dist）
 

@@ -13,6 +13,8 @@ import { join, resolve } from "node:path";
 import type {
   AppSettings,
   AppState,
+  AuthMode,
+  BridgeAuthFingerprint,
   BridgeReading,
   BridgeStatus,
   ModState,
@@ -134,6 +136,7 @@ class AppController {
   constructor() {
     this.appVersion = readAppVersion();
     this.settingsStore = new SettingsStore();
+    this.loadAuthHints();
     this.scan = new ScanService(
       () => {
         const settings = this.settingsStore.get();
@@ -367,9 +370,10 @@ class AppController {
   }
 
   private handleSnapshot(result: ScanResult): void {
-    this.localSnapshot = result.snapshot;
+    const snapshot = this.applyAuthHints(result.snapshot);
+    this.localSnapshot = snapshot;
     this.scanStats = result.stats;
-    this.quota.setLocalSnapshot(result.snapshot);
+    this.quota.setLocalSnapshot(snapshot);
     this.modState = this.safeModState();
     this.refreshQuota();
     this.sync.requestSyncSoon();
@@ -379,10 +383,89 @@ class AppController {
   }
 
   private handleBridgeReport(reading: BridgeReading): void {
-    void reading;
+    if (reading.auth !== undefined) {
+      this.authHints.set(reading.sessionId, { ...reading.auth, at: reading.at });
+      this.scheduleAuthHintsSave();
+      const hinted = this.applyAuthHints(this.localSnapshot);
+      if (hinted !== this.localSnapshot) {
+        this.localSnapshot = hinted;
+        this.quota.setLocalSnapshot(hinted);
+        this.mergedCache = undefined;
+      }
+    }
     this.refreshQuota();
     this.sync.requestSyncSoon();
     this.push();
+  }
+
+  // MARK: - Auth hints (mod fingerprint)
+
+  private authHintsPath(): string {
+    return join(appConfigDir(), "session-auth.json");
+  }
+
+  private loadAuthHints(): void {
+    try {
+      const path = this.authHintsPath();
+      if (!existsSync(path)) return;
+      const parsed = JSON.parse(readFileSync(path, "utf8")) as Record<string, BridgeAuthFingerprint & { at?: number }>;
+      for (const [sessionId, hint] of Object.entries(parsed ?? {})) {
+        if (hint === null || typeof hint !== "object" || typeof hint.credential !== "string") continue;
+        this.authHints.set(sessionId, { ...hint, at: typeof hint.at === "number" ? hint.at : 0 });
+      }
+    } catch (error) {
+      console.warn("[auth] failed to load session auth hints", error);
+    }
+  }
+
+  private scheduleAuthHintsSave(): void {
+    if (this.authHintsSaveTimer !== undefined) return;
+    this.authHintsSaveTimer = setTimeout(() => {
+      this.authHintsSaveTimer = undefined;
+      this.saveAuthHints();
+    }, 1_000);
+    this.authHintsSaveTimer.unref?.();
+  }
+
+  private saveAuthHints(): void {
+    try {
+      const record: Record<string, BridgeAuthFingerprint & { at: number }> = {};
+      for (const [sessionId, hint] of this.authHints) record[sessionId] = hint;
+      mkdirSync(appConfigDir(), { recursive: true });
+      writeFileSync(this.authHintsPath(), JSON.stringify(record, null, 2) + "\n", "utf8");
+    } catch (error) {
+      console.warn("[auth] failed to persist session auth hints", error);
+    }
+  }
+
+  private fingerprintMode(auth: BridgeAuthFingerprint): AuthMode {
+    if (auth.thirdPartyBase === true) return "thirdParty";
+    switch (auth.credential) {
+      case "authToken":
+      case "apiKey":
+      case "apiKeyHelper":
+        return "thirdParty";
+      case "managedKey":
+      case "oauthToken":
+        return "subscription";
+      default:
+        return "unknown";
+    }
+  }
+
+  /** Overlay authoritative mod fingerprints onto the scanner's heuristic session verdicts. */
+  private applyAuthHints(snapshot: UsageSnapshot): UsageSnapshot {
+    if (this.authHints.size === 0) return snapshot;
+    let changed = false;
+    const sessions = snapshot.sessions.map((session) => {
+      const hint = this.authHints.get(session.id);
+      if (hint === undefined) return session;
+      const mode = this.fingerprintMode(hint);
+      if (session.authMode === mode) return session;
+      changed = true;
+      return { ...session, authMode: mode };
+    });
+    return changed ? { ...snapshot, sessions } : snapshot;
   }
 
   /** Server quota is the display quota while sync is online; local quota otherwise. */

@@ -10,6 +10,7 @@
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { filterSubscriptionEntries } from "./auth.js";
+import type { AuthMode } from "./types.js";
 import type {
   LimitEstimate,
   LimitEvent,
@@ -726,6 +727,8 @@ export interface BuildQuotaSnapshotOptions {
   planHistoryPath: string;
   /** Observations merged from other devices; they feed the windows but not the plan history. */
   extraObservations?: QuotaObservation[];
+  /** Authoritative per-session auth verdicts; the heuristic applies when absent. */
+  sessionAuth?: ReadonlyMap<string, AuthMode>;
   now?: number;
 }
 
@@ -757,6 +760,7 @@ export interface BuildQuotaSnapshotFromDataOptions {
   mode: WindowMode;
   plan?: PlanInfo;
   planChanges?: PlanChange[];
+  sessionAuth?: ReadonlyMap<string, AuthMode>;
   now?: number;
 }
 
@@ -785,12 +789,13 @@ function computeSnapshot(input: {
   mode: WindowMode;
   planChanges: PlanChange[];
   plan?: PlanInfo;
+  sessionAuth?: ReadonlyMap<string, AuthMode>;
   now?: number;
 }): QuotaSnapshot {
   const now = input.now ?? Date.now();
   // Subscription quota accounting must ignore third-party API / API-key usage;
   // unknown sessions stay in (conservative, matches old behaviour).
-  const subscriptionEntries = filterSubscriptionEntries(input.entries);
+  const subscriptionEntries = filterSubscriptionEntries(input.entries, input.sessionAuth);
   const statusLineObservationCount = input.observations.filter(
     (observation) => observation.source === "statusLine"
   ).length;

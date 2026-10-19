@@ -4,7 +4,7 @@
 // every device's usage), and the locally computed snapshot otherwise. The local snapshot always
 // includes remote observations pulled from the sync server as extra observations, so 5h/7d windows
 // still account for other devices when the sync connection is down.
-import type { LimitEvent, PlanInfo, QuotaObservation, QuotaSnapshot, UsageEntry, UsageSnapshot, WindowMode } from "@ccusage/core";
+import type { AuthMode, LimitEvent, PlanInfo, QuotaObservation, QuotaSnapshot, UsageEntry, UsageSnapshot, WindowMode } from "@ccusage/core";
 import { buildQuotaSnapshot, readPlanInfo, readStatusLineLog } from "@ccusage/core";
 
 export interface QuotaPaths {
@@ -22,6 +22,7 @@ export class QuotaService {
   private serverQuota: QuotaSnapshot | undefined;
   private remoteObservations: QuotaObservation[] = [];
   private entries: UsageEntry[] = [];
+  private sessionAuth: ReadonlyMap<string, AuthMode> = new Map();
   private limitEvents: LimitEvent[] = [];
   private mode: WindowMode = "firstRequest";
   private lastError: string | undefined;
@@ -34,6 +35,11 @@ export class QuotaService {
   setLocalSnapshot(snapshot: UsageSnapshot): void {
     this.entries = snapshot.entries;
     this.limitEvents = snapshot.limitEvents;
+    const auth = new Map<string, AuthMode>();
+    for (const session of snapshot.sessions) {
+      if (session.authMode !== undefined) auth.set(session.id, session.authMode);
+    }
+    this.sessionAuth = auth;
   }
 
   setWindowMode(mode: WindowMode): void {
@@ -78,6 +84,7 @@ export class QuotaService {
         statusLineLogPath: paths.statusLineLogPath,
         planHistoryPath: paths.planHistoryPath,
         extraObservations: this.remoteObservations,
+        ...(this.sessionAuth.size > 0 ? { sessionAuth: this.sessionAuth } : {}),
       });
       this.lastError = undefined;
     } catch (error) {

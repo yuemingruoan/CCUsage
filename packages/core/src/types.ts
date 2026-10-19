@@ -301,8 +301,20 @@ export interface BridgeConfig {
   appVersion: string;
 }
 
+/** How the Claude Code process authenticates, as seen by the mod (authoritative). */
+export interface BridgeAuthFingerprint {
+  /** managedKey = /login subscription; others are API-key / token paths. */
+  credential: "managedKey" | "oauthToken" | "authToken" | "apiKey" | "apiKeyHelper" | "unknown";
+  /** Hostname of ANTHROPIC_BASE_URL, when set. */
+  baseUrlHost?: string;
+  /** True when the base URL points somewhere other than *.anthropic.com. */
+  thirdPartyBase?: boolean;
+}
+
 export interface BridgeReading {
   sessionId: string;
+  /** Authoritative auth source reported by the mod running inside Claude Code. */
+  auth?: BridgeAuthFingerprint;
   entrypoint?: string;
   rateLimits: Array<{
     kind: string;

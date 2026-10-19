@@ -183,6 +183,14 @@ Passwords: node:crypto scrypt + salt; tokens: random hex stored sha256.
 - DELETE /devices/:id -> 204.
 Bodies JSON objects only, reject >2MB with {error} 400. Tests use createServer(dbPath) factory on port 0.
 
+## Mod auth fingerprint
+
+Every bridge reading may carry `auth: { credential: "managedKey" | "oauthToken" | "authToken" |
+"apiKey" | "apiKeyHelper" | "unknown"; baseUrlHost?: string; thirdPartyBase?: boolean }`, read from
+the Claude Code process env + merged settings. The app treats it as authoritative over the
+transcript heuristic (custom base URL or non-managed-key credentials = thirdParty) and persists it
+per session. `"managedKey"` is the `/login` subscription path.
+
 ## Mod generation / install
 
 scripts/gen-mod-source.mjs (lead) writes packages/core/src/mod-source.generated.ts from

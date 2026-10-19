@@ -95,6 +95,17 @@ test("filterSubscriptionEntries drops third-party sessions, keeps unknown and su
   assert.equal(kept.length, 3);
 });
 
+test("explicit session auth overrides the heuristic", () => {
+  const heuristicThirdParty = [thirdPartyClaudeEntry("a", "relay", START), thirdPartyClaudeEntry("b", "relay", START + HOUR)];
+  const heuristicSubscription = [subscriptionEntry("c", "proxy", START)];
+  const overrides = new Map<string, "subscription" | "thirdParty">([
+    ["relay", "subscription"], // mod says managed key -> authoritative
+    ["proxy", "thirdParty"], // mod says custom BASE_URL -> authoritative
+  ]);
+  const kept = filterSubscriptionEntries([...heuristicThirdParty, ...heuristicSubscription], overrides);
+  assert.deepEqual(kept.map((item) => item.sessionId), ["relay", "relay"]);
+});
+
 test("subscription quota ignores third-party sessions but keeps subscription and unknown", () => {
   const now = START + 2 * HOUR;
   const entries = [

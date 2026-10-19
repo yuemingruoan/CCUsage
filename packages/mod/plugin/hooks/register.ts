@@ -26,8 +26,19 @@ export type BridgeConfig = {
   appVersion?: string
 }
 
+export type AuthFingerprint = {
+  /** managedKey = /login subscription; anything else is an API-key / token path. */
+  credential: 'managedKey' | 'oauthToken' | 'authToken' | 'apiKey' | 'apiKeyHelper' | 'unknown'
+  /** Hostname of ANTHROPIC_BASE_URL, when one is set. */
+  baseUrlHost?: string
+  /** True when the base URL does not point at *.anthropic.com. */
+  thirdPartyBase?: boolean
+}
+
 export type BridgeReading = {
   sessionId: string
+  /** Authoritative auth source read from the Claude Code process (env + settings). */
+  auth?: AuthFingerprint
   entrypoint?: string
   rateLimits: Array<{ kind: string; percentUsed: number; resetsAt?: number }>
   cost?: { usd: number }
@@ -68,9 +79,10 @@ const toEpoch = (value: string | number | undefined): number | undefined => {
 }
 
 /** The wire payload the app's bridge expects. */
-export function buildReading(sessionId: string, usage: Usage, at: number): BridgeReading {
+export function buildReading(sessionId: string, usage: Usage, at: number, auth?: AuthFingerprint): BridgeReading {
   return {
     sessionId,
+    ...(auth !== undefined ? { auth } : {}),
     entrypoint: usage.entrypoint,
     rateLimits: usage.rateLimits.map(limit => ({
       kind: limit.kind,
@@ -108,13 +120,14 @@ export type ReportState = {
   lastPushAt: number
   lastRefreshId: number
   lastRateLimits: string
+  lastAuth: string
   lastJsonlAt: number
   lastJsonlReading: string
   pollMs: number
 }
 
 export function initialReportState(): ReportState {
-  return { lastPushAt: 0, lastRefreshId: -1, lastRateLimits: '', lastJsonlAt: 0, lastJsonlReading: '', pollMs: DEFAULT_POLL_MS }
+  return { lastPushAt: 0, lastRefreshId: -1, lastRateLimits: '', lastAuth: '', lastJsonlAt: 0, lastJsonlReading: '', pollMs: DEFAULT_POLL_MS }
 }
 
 /** Whether the app should be told about this reading now. */
@@ -124,6 +137,8 @@ export function shouldReport(state: ReportState, config: BridgeConfig, reading: 
   if (refreshId !== state.lastRefreshId) return true
   const rates = JSON.stringify(reading.rateLimits)
   if (rates !== state.lastRateLimits) return true
+  const auth = JSON.stringify(reading.auth ?? null)
+  if (state.lastAuth !== '' && auth !== state.lastAuth) return true
   const pollMs = Math.max(config.pollMs ?? state.pollMs ?? DEFAULT_POLL_MS, 250)
   return now - state.lastPushAt >= pollMs
 }
@@ -165,6 +180,69 @@ async function readBridge($: EngineInterface): Promise<{ config: BridgeConfig; p
     }
   }
   return undefined
+}
+
+const hostOf = (value: string | undefined): string | undefined => {
+  if (value === undefined || value.length === 0) return undefined
+  try {
+    return new URL(value).hostname
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Reads the auth source of the process Claude Code runs in: the env overrides plus the
+ * merged settings. This is authoritative even when the model name, response ids and
+ * pricing all look like the official subscription (e.g. a reverse proxy).
+ */
+export async function readAuthFingerprint($: EngineInterface): Promise<AuthFingerprint> {
+  let settings: { env?: Record<string, string>; apiKeyHelper?: string } | undefined
+  try {
+    settings = (await $.settings.read()) as { env?: Record<string, string>; apiKeyHelper?: string }
+  } catch {
+    settings = undefined
+  }
+  const settingsEnv = settings?.env ?? {}
+  const [baseUrlEnv, authToken, apiKey, oauthToken] = await Promise.all([
+    $.env.get('ANTHROPIC_BASE_URL'),
+    $.env.get('ANTHROPIC_AUTH_TOKEN'),
+    $.env.get('ANTHROPIC_API_KEY'),
+    $.env.get('CLAUDE_CODE_OAUTH_TOKEN'),
+  ])
+  const baseUrl = baseUrlEnv ?? settingsEnv.ANTHROPIC_BASE_URL
+  const apiKeyHelper = typeof settings?.apiKeyHelper === 'string' && settings.apiKeyHelper.length > 0 ? settings.apiKeyHelper : undefined
+  const credential: AuthFingerprint['credential'] = apiKeyHelper !== undefined
+    ? 'apiKeyHelper'
+    : authToken !== undefined && authToken.length > 0
+      ? 'authToken'
+      : apiKey !== undefined && apiKey.length > 0
+        ? 'apiKey'
+        : oauthToken !== undefined && oauthToken.length > 0
+          ? 'oauthToken'
+          : 'managedKey'
+  const baseUrlHost = hostOf(baseUrl)
+  const thirdPartyBase = baseUrlHost !== undefined && !(baseUrlHost === 'anthropic.com' || baseUrlHost.endsWith('.anthropic.com'))
+  return {
+    credential,
+    ...(baseUrlHost !== undefined ? { baseUrlHost } : {}),
+    ...(thirdPartyBase ? { thirdPartyBase: true } : {}),
+  }
+}
+
+let fingerprint: AuthFingerprint | undefined
+let fingerprintAt = 0
+
+async function currentFingerprint($: EngineInterface, now: number): Promise<AuthFingerprint | undefined> {
+  if (fingerprint === undefined || now - fingerprintAt > 60_000) {
+    try {
+      fingerprint = await readAuthFingerprint($)
+      fingerprintAt = now
+    } catch {
+      // keep the previous fingerprint; auth reporting must never break a session
+    }
+  }
+  return fingerprint
 }
 
 async function postReading($: EngineInterface, config: BridgeConfig, reading: BridgeReading): Promise<BridgeReply | undefined> {
@@ -215,9 +293,9 @@ async function push($: EngineInterface, usage: Usage, now: number, changed: bool
   }
   const id = sessionId ?? (await $.session.id())
   sessionId = id
-  const reading = buildReading(id, usage, now)
+  const reading = buildReading(id, usage, now, await currentFingerprint($, now))
   reading.changed = changed
-  if (reading.rateLimits.length === 0) return
+  if (reading.rateLimits.length === 0 && reading.auth === undefined) return
   const reply = await postReading($, bridge.config, reading)
   if (reply === undefined) {
     const record = jsonlRecord(id, usage, now)
@@ -231,6 +309,7 @@ async function push($: EngineInterface, usage: Usage, now: number, changed: bool
   state.lastPushAt = now
   state.lastRefreshId = bridge.config.refreshId ?? 0
   state.lastRateLimits = JSON.stringify(reading.rateLimits)
+  state.lastAuth = JSON.stringify(reading.auth ?? null)
   if (typeof reply.pollMs === 'number' && reply.pollMs > 0) state.pollMs = reply.pollMs
   if (reply.reportNow === true) {
     // The app asked for a fresh reading; answer once more on the next tick.
@@ -248,7 +327,7 @@ async function tick($: EngineInterface): Promise<void> {
     const usage = (await $.session.usage()) as Usage
     const id = sessionId ?? (await $.session.id())
     sessionId = id
-    const reading = buildReading(id, usage, now)
+    const reading = buildReading(id, usage, now, await currentFingerprint($, now))
     state.pollMs = bridge.config.pollMs ?? state.pollMs
     if (!shouldReport(state, bridge.config, reading, now)) return
     await push($, usage, now, false)

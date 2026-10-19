@@ -98,6 +98,21 @@ windows (`buildQuotaSnapshot` / `buildQuotaSnapshotFromData`) filter with
 `filterSubscriptionEntries`: third-party sessions do not consume the 5h/7d subscription limits;
 mixed sessions only drop their third-party requests.
 
+### Authoritative layer: mod auth fingerprint (v2.4)
+
+A high-fidelity relay can reverse-proxy genuine Anthropic responses, making model names, request
+ids and pricing indistinguishable from the subscription. The remaining authority is the Claude Code
+process itself: the mod reads `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY`,
+`CLAUDE_CODE_OAUTH_TOKEN` and the merged settings (`env`, `apiKeyHelper`) via `$.env` / `$.settings`,
+and reports a fingerprint on every bridge reading (`BridgeAuthFingerprint`: credential, baseUrlHost,
+thirdPartyBase). The app overlays it on the heuristic (`applyAuthHints`, persisted to
+`<appConfigDir>/session-auth.json`), and syncs the resulting `SessionSummary.authMode` to the server;
+server-side quota uses explicit `sessions.auth_mode` values via `sessionAuthModes`. Any custom base
+URL or API-key/token/helper credential is third-party regardless of response content; `/login`
+managed key on *.anthropic.com is subscription. A relay that injects an OAuth token while keeping
+the official host still looks like subscription usage - it consumes that account's quota; comparing
+account identity (oauthAccount) is the next step.
+
 Clients keep their own local snapshot for offline use, but when sync is online the
 quota cards use the server-computed snapshot (which includes every device) and the
 device list / other devices' usage is merged into the views. Remote entries are tagged
