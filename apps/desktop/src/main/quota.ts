@@ -84,6 +84,7 @@ export class QuotaService {
         statusLineLogPath: paths.statusLineLogPath,
         planHistoryPath: paths.planHistoryPath,
         extraObservations: this.remoteObservations,
+        costBasis: "all",
         ...(this.sessionAuth.size > 0 ? { sessionAuth: this.sessionAuth } : {}),
       });
       this.lastError = undefined;

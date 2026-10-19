@@ -62,6 +62,13 @@
   AppController 的 authHints 字段在补丁中漏加声明，applyAuthHints 访问 undefined；
   已补上字段，并把启发式 authMode 写回本地会话（之前只有远端会话带分类）。
 
+## 2.4.2 额度口径调整（2026-10-19）
+
+- 额度估算改为按**全部已同步用量**折算（含第三方 API / 中转），不再剔除第三方会话：
+  实测 Windows 中转的 claude-* 用量与 CC 上报的 7d 百分比同步上涨，剔除会让限额估算偏低；
+- 会话来源徽标仍保留；filterSubscriptionEntries / costBasis 保留可切换口径的能力；
+- 清理服务端遗留的两台验证设备（lead-verify-v230），设备数回到 2。
+
 ## 打包产物（npm run dist）
 
 - `dist/packages/CCUsage-<version>-mac-arm64.zip`（~122 MB）— macOS .app，electron-packager + ad-hoc codesign（已 `codesign --verify`）；解压后顶层为 CCUsage.app

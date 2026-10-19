@@ -117,6 +117,7 @@ test("subscription quota ignores third-party sessions but keeps subscription and
     entries,
     observations: [],
     mode: "firstRequest",
+    costBasis: "subscription",
     plan: { tier: "default_claude_max_20x", fetchedAt: START },
     now,
   });

@@ -729,6 +729,11 @@ export interface BuildQuotaSnapshotOptions {
   extraObservations?: QuotaObservation[];
   /** Authoritative per-session auth verdicts; the heuristic applies when absent. */
   sessionAuth?: ReadonlyMap<string, AuthMode>;
+  /**
+   * Which usage feeds the window cost estimate: all synced usage (default; a relay can still
+   * consume the subscription quota) or only heuristically subscription sessions.
+   */
+  costBasis?: "all" | "subscription";
   now?: number;
 }
 
@@ -747,6 +752,7 @@ export function buildQuotaSnapshot(options: BuildQuotaSnapshotOptions): QuotaSna
     observations,
     mode: options.mode,
     planChanges: changes,
+    ...(options.costBasis !== undefined ? { costBasis: options.costBasis } : {}),
     ...(plan !== undefined ? { plan } : {}),
     ...(options.now !== undefined ? { now: options.now } : {})
   });
@@ -761,6 +767,7 @@ export interface BuildQuotaSnapshotFromDataOptions {
   plan?: PlanInfo;
   planChanges?: PlanChange[];
   sessionAuth?: ReadonlyMap<string, AuthMode>;
+  costBasis?: "all" | "subscription";
   now?: number;
 }
 
@@ -778,6 +785,7 @@ export function buildQuotaSnapshotFromData(options: BuildQuotaSnapshotFromDataOp
     observations,
     mode: options.mode,
     planChanges: options.planChanges ?? [],
+    ...(options.costBasis !== undefined ? { costBasis: options.costBasis } : {}),
     ...(options.plan !== undefined ? { plan: options.plan } : {}),
     ...(options.now !== undefined ? { now: options.now } : {})
   });
@@ -790,12 +798,15 @@ function computeSnapshot(input: {
   planChanges: PlanChange[];
   plan?: PlanInfo;
   sessionAuth?: ReadonlyMap<string, AuthMode>;
+  costBasis?: "all" | "subscription";
   now?: number;
 }): QuotaSnapshot {
   const now = input.now ?? Date.now();
-  // Subscription quota accounting must ignore third-party API / API-key usage;
-  // unknown sessions stay in (conservative, matches old behaviour).
-  const subscriptionEntries = filterSubscriptionEntries(input.entries, input.sessionAuth);
+  // Cost basis: all synced usage by default (a relay may still consume the subscription
+  // quota); costBasis: "subscription" excludes heuristic third-party sessions instead.
+  const scopedEntries = input.costBasis === "subscription"
+    ? filterSubscriptionEntries(input.entries, input.sessionAuth)
+    : input.entries;
   const statusLineObservationCount = input.observations.filter(
     (observation) => observation.source === "statusLine"
   ).length;
@@ -808,13 +819,13 @@ function computeSnapshot(input: {
     // Weekly limits reset on a fixed schedule; the 5-hour mode is configurable.
     const kindWindows = quotaWindows(
       kind,
-      subscriptionEntries,
+      scopedEntries,
       input.observations,
       kind === "sevenDay" ? "fixedRolling" : input.mode,
       now
     );
     windows[kind] = kindWindows;
-    status[kind] = quotaStatus(kind, kindWindows, subscriptionEntries, input.planChanges, now);
+    status[kind] = quotaStatus(kind, kindWindows, scopedEntries, input.planChanges, now);
   }
   return {
     windows,
