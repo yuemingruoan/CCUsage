@@ -39,13 +39,14 @@ interface UsageShape {
 function usageFor(model: string, index: number, rnd: () => number): UsageShape {
   const big = model.includes("opus") ? 1.6 : model.includes("sonnet") ? 1 : 0.5;
   const cacheRead = Math.floor((80_000 + rnd() * 160_000) * big);
+  // Demo local sessions mimic the real subscription path: 1h prompt cache only.
   const cacheWrite = Math.floor((2_000 + rnd() * 9_000) * big);
-  const write1h = Math.floor(cacheWrite * 0.7);
+  const write1h = cacheWrite;
   return {
     input: 4 + Math.floor(rnd() * 20),
     output: 300 + Math.floor(rnd() * 1_400),
     cacheRead,
-    cacheWrite5m: cacheWrite - write1h,
+    cacheWrite5m: 0,
     cacheWrite1h: write1h,
   };
 }

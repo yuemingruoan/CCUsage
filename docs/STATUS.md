@@ -56,6 +56,12 @@
 - 仍无法区分的极端情况：中转注入 OAuth token 且保持官方 host（此时消耗的是该账号的订阅额度，
   需要比较 oauthAccount 身份才能判定「谁」的订阅，留作下一步）。
 
+## 2.4.1 修复（2026-10-19）
+
+- 修复 2.4.0 启动后首轮扫描报「Cannot read properties of undefined (reading 'size')」：
+  AppController 的 authHints 字段在补丁中漏加声明，applyAuthHints 访问 undefined；
+  已补上字段，并把启发式 authMode 写回本地会话（之前只有远端会话带分类）。
+
 ## 打包产物（npm run dist）
 
 - `dist/packages/CCUsage-<version>-mac-arm64.zip`（~122 MB）— macOS .app，electron-packager + ad-hoc codesign（已 `codesign --verify`）；解压后顶层为 CCUsage.app

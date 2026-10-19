@@ -132,6 +132,9 @@ class AppController {
   private mergedCache:
     | { local: UsageSnapshot; remoteEntries: readonly unknown[]; deviceNames: ReadonlyMap<string, string>; snapshot: UsageSnapshot }
     | undefined;
+  /** Authoritative auth source per session, reported by the mod running inside Claude Code. */
+  private readonly authHints = new Map<string, BridgeAuthFingerprint & { at: number }>();
+  private authHintsSaveTimer: NodeJS.Timeout | undefined;
 
   constructor() {
     this.appVersion = readAppVersion();

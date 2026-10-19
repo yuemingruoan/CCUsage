@@ -164,6 +164,7 @@ export function buildSnapshot(
       requestCount: entries.length,
       subagentCount: subagents.get(sessionId)?.size ?? 0,
       hasUnpricedRequests: unpriced,
+      authMode: classifySessionAuth(entries),
       ...(recordedCosts[sessionId] !== undefined ? { recordedCost: recordedCosts[sessionId] } : {})
     });
   }
