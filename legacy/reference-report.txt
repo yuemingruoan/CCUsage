@@ -1,0 +1,2 @@
+125 files, 48191 requests, 86 sessions, scanned in 15.735717625 seconds
+# Session/quota details were removed from the public copy (real transcripts stay local).

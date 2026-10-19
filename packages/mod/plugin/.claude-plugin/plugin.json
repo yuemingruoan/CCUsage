@@ -1,0 +1,8 @@
+{
+  "name": "ccusage",
+  "version": "0.2.0",
+  "description": "Reports Claude Code subscription rate limits to the CCUsage app over a local Unix socket and writes them to the app's log.",
+  "author": {
+    "name": "CCUsage"
+  }
+}

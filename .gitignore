@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.build/
+.swiftpm/
+.DS_Store
+*.log
+coverage/
+demo-data/
+services/server/data/
+.etest/
+.debug/

@@ -1,0 +1,46 @@
+{
+  "name": "ccusage-monorepo",
+  "private": true,
+  "version": "2.1.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*",
+    "services/*"
+  ],
+  "scripts": {
+    "build": "npm run gen:mod && npm run build:core && npm run build:server && npm run build:desktop",
+    "build:core": "tsc -p packages/core",
+    "build:server": "tsc -p services/server",
+    "build:desktop": "node apps/desktop/build.mjs",
+    "test": "npm run build:core && node --import tsx --test packages/core/test/*.test.ts packages/mod/test/*.test.ts services/server/test/*.test.ts",
+    "server": "npm run build:core && node --import tsx services/server/src/index.ts serve",
+    "start": "npm run build && env -u ELECTRON_RUN_AS_NODE electron apps/desktop/dist/main.cjs",
+    "demo": "npm run build && env -u ELECTRON_RUN_AS_NODE CCUSAGE_DEMO_DIR=demo-data electron apps/desktop/dist/main.cjs",
+    "seed": "node --import tsx scripts/seed-demo.ts",
+    "seed-server": "node --import tsx scripts/seed-server.ts",
+    "screenshot": "node --import tsx scripts/screenshot.ts",
+    "parity": "node --import tsx scripts/parity-report.ts",
+    "typecheck": "tsc -p packages/core --noEmit && tsc -p services/server --noEmit",
+    "gen:mod": "node scripts/gen-mod-source.mjs",
+    "smoke:mod": "node --import tsx scripts/mod-bridge-smoke.ts",
+    "test:all": "npm test && npm run smoke:mod",
+    "server:init": "node --import tsx services/server/src/index.ts init",
+    "server:accounts": "node --import tsx services/server/src/index.ts accounts",
+    "dist:mac": "npm run build && node scripts/build-desktop-packages.mjs --platform=darwin --arch=arm64",
+    "dist:win": "npm run build && node scripts/build-desktop-packages.mjs --platform=win32 --arch=x64",
+    "dist:server": "npm run build:core && npm run build:server && node scripts/build-server-package.mjs",
+    "dist": "npm run build && node scripts/build-desktop-packages.mjs --platform=all && node scripts/build-server-package.mjs"
+  },
+  "devDependencies": {
+    "@electron/packager": "^20.3.0",
+    "@types/express": "^5.0.0",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "electron": "^44.9.0",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.0"
+  }
+}
