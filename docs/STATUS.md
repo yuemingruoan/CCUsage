@@ -14,7 +14,7 @@
 
 - npm install：100 包（electron 44.9.0 / react 19 / express 5 / esbuild / tsx / typescript）。
 - npm run build：gen:mod + core(tsc) + server(tsc) + desktop(esbuild 5/5 entries) 全绿。
-- npm test：113 tests / 113 pass（core 64、server 42、mod 7）。
+- npm test：111 tests / 111 pass（core 62、server 42、mod 7）。
 - npm run smoke:mod：真实 register.ts + 假 engine + 真 Unix socket 服务，6 次推送 / 1 条回退日志，刷新/measure/refreshId/reportNow/回退全部验证。
 - npm run parity：125 files, 48191 requests, 86 sessions, total $6327.55 —— 与原 Swift 版报告逐字节一致（PARITY OK）。
 - npm run screenshot：本地起服务端 + 2 设备播种 + Electron 截图；main.png / settings.png / tray.png 均非空（含 2 台设备徽标、服务端额度、设备表）。
@@ -68,6 +68,15 @@
   实测 Windows 中转的 claude-* 用量与 CC 上报的 7d 百分比同步上涨，剔除会让限额估算偏低；
 - 会话来源徽标仍保留；filterSubscriptionEntries / costBasis 保留可切换口径的能力；
 - 清理服务端遗留的两台验证设备（lead-verify-v230），设备数回到 2。
+
+## 2.4.3 额度归属修正（2026-10-19）
+
+- 之前的「缓存 TTL/请求 ID」判定把 Windows 中转的 Claude 用量误判成第三方 API，导致 7d 折算与
+  限额估算偏低；实测 CC 周百分比在中转时段仍上涨，说明它消耗的就是订阅额度；
+- 归属改为按模型族：claude-* = 订阅（计入额度，不分直连/中转/API 路径）；非 Claude 模型 =
+  第三方（不消耗订阅额度）；混合会话 = mixed；
+- 额度成本口径默认 all；costBasis: subscription 保留为严格口径；mod auth 指纹仅用于诊断提示；
+- 会话徽标改为「订阅 / 第三方模型 / 混合」，设备数清理为 2。
 
 ## 打包产物（npm run dist）
 

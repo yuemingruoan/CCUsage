@@ -171,8 +171,8 @@ Passwords: node:crypto scrypt + salt; tokens: random hex stored sha256.
 - POST /logout {deviceId} -> 204 revoke token.
 - POST /ingest (auth) SyncIngestRequest -> SyncIngestResponse. Optional `sessions: SyncSessionMeta[]`
   carries per-session metadata (id/title/projectName/cwd/start/end/authMode) so peers can render real
-  titles and the subscription-vs-third-party classification (authMode: subscription | thirdParty |
-  mixed | unknown).
+  titles and the quota attribution (authMode: subscription = Claude models, thirdParty = non-Claude
+  models, mixed, unknown).
   Dedupe entries by id per account, observations by (kind,observed_at,resets_at,device_id); upsert
   device last_seen_at; upsert session metadata.
 - GET /sync?since=<seq>&mode=firstRequest (auth) -> SyncPullResponse: entries from OTHER devices with
@@ -183,13 +183,13 @@ Passwords: node:crypto scrypt + salt; tokens: random hex stored sha256.
 - DELETE /devices/:id -> 204.
 Bodies JSON objects only, reject >2MB with {error} 400. Tests use createServer(dbPath) factory on port 0.
 
-## Mod auth fingerprint
+## Mod auth fingerprint (diagnostics)
 
-Every bridge reading may carry `auth: { credential: "managedKey" | "oauthToken" | "authToken" |
-"apiKey" | "apiKeyHelper" | "unknown"; baseUrlHost?: string; thirdPartyBase?: boolean }`, read from
-the Claude Code process env + merged settings. The app treats it as authoritative over the
-transcript heuristic (custom base URL or non-managed-key credentials = thirdParty) and persists it
-per session. `"managedKey"` is the `/login` subscription path.
+Every bridge reading may carry auth: { credential, baseUrlHost?, thirdPartyBase? }, read from the
+Claude Code process env + merged settings. It is stored/forwarded for diagnostics and shown as a tooltip
+only; it does not change quota attribution (a custom BASE_URL does not prove which upstream account
+was billed). Quota attribution is model-family based: Claude models = subscription, non-Claude =
+third-party.
 
 ## Mod generation / install
 

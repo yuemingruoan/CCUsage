@@ -165,7 +165,7 @@ export function Overview({
             windowKind === "fiveHour"
               ? "5 小时窗口 · " +
                 WINDOW_MODE_LABELS[state.settings.windowMode] +
-                "（可在设置中切换）；“CC 确认”表示重置时间来自 Claude Code；估算按全部已同步用量折算（含第三方 API）"
+                "（可在设置中切换）；“CC 确认”表示重置时间来自 Claude Code；估算按全部 Claude 用量折算（含中转/API 路径）"
               : "每周窗口 · 有 CC 上报时按其重置时间对齐"
           }
         >

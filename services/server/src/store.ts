@@ -21,7 +21,7 @@ import type {
   TokenCounts,
   UsageEntry,
 } from "@ccusage/core";
-import { classifyAuthSignals } from "@ccusage/core";
+
 
 /** SQLite stores timestamps as INTEGER epoch milliseconds, like the app. */
 const SCHEMA = `
@@ -686,13 +686,11 @@ export class SyncStore {
         webSearch: num(row.cost_web_search),
       };
       const models = str(row.models).split(",").filter((model) => model.length > 0);
-      const fallbackAuth = classifyAuthSignals({
-        requests: num(row.requests),
-        cacheWrite1h: num(row.cache_write_1h),
-        cacheWrite5m: num(row.cache_write_5m),
-        claudeRequests: num(row.claude_requests),
-        anthropicIdRequests: num(row.anthropic_ids),
-      });
+      const fallbackAuth = num(row.claude_requests) === num(row.requests)
+        ? "subscription"
+        : num(row.claude_requests) === 0
+          ? "thirdParty"
+          : "mixed";
       const existing = meta.get(id);
       if (existing) {
         existing.requests = num(row.requests);
@@ -703,7 +701,7 @@ export class SyncStore {
         existing.models = models;
         existing.subagentCount = num(row.subagents);
         existing.hasUnpricedRequests = num(row.unpriced) > 0;
-        existing.authMode = existing.authMode ?? fallbackAuth;
+        existing.authMode = fallbackAuth;
         existing.deviceId = existing.deviceId ?? str(row.device_id);
       } else {
         meta.set(id, {

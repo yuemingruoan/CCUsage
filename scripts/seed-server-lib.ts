@@ -9,6 +9,7 @@ export const DEMO_ACCOUNT = { username: "demo", password: "demo123" };
 const SESSION_TITLES = ["GPU 调试", "渲染管线优化", "发布构建"];
 const SESSION_PROJECTS = ["demo-alpha", "demo-beta", "demo-gamma"];
 const MODEL_CHOICES = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
+const THIRD_PARTY_MODELS = ["deepseek-v4.1-flash", "glm-5.3", "kimi-k2-8-preview"];
 
 export interface SeededUsage {
   entries: UsageEntry[];
@@ -44,7 +45,12 @@ export function makeEntries(deviceId: string, startMs: number, count: number, se
   const span = 3 * 3_600_000;
   for (let i = 0; i < count; i++) {
     const sessionIndex = Math.min(sessionCount - 1, Math.floor((i * sessionCount) / Math.max(count, 1)));
-    const model = MODEL_CHOICES[Math.floor(rnd() * MODEL_CHOICES.length)] as string;
+    // The studio device's last session stands in for non-Claude models (deepseek/glm/kimi):
+    // those never consume the Claude subscription quota.
+    const thirdPartySession = deviceId.includes("studio") && sessionIndex === sessionCount - 1;
+    const model = thirdPartySession
+      ? (THIRD_PARTY_MODELS[Math.floor(rnd() * THIRD_PARTY_MODELS.length)] as string)
+      : (MODEL_CHOICES[Math.floor(rnd() * MODEL_CHOICES.length)] as string);
     const big = model.includes("opus") ? 1.6 : model.includes("sonnet") ? 1 : 0.5;
     // Demo separation: the laptop uses the subscription path (1h cache), the studio
     // device stands in for an API-key / third-party setup (5m cache only).
@@ -58,7 +64,9 @@ export function makeEntries(deviceId: string, startMs: number, count: number, se
       cacheWrite1h: thirdParty ? 0 : cacheWrite,
       webSearches: rnd() < 0.05 ? 1 : 0,
     };
-    const cost = Pricing.cost(tokens, model, false) ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, webSearch: 0 };
+    const cost = thirdPartySession
+      ? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, webSearch: 0 }
+      : Pricing.cost(tokens, model, false) ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, webSearch: 0 };
     const timestamp = Math.floor(startMs + (i / Math.max(count, 1)) * span);
     const sessionId = sessionIds[sessionIndex] as string;
     entries.push({
@@ -69,7 +77,7 @@ export function makeEntries(deviceId: string, startMs: number, count: number, se
       tokens,
       isFast: false,
       cost,
-      isPriced: true,
+      isPriced: !thirdPartySession,
       deviceId,
     });
     const accumulator = accumulators[sessionIndex] as SessionAccumulator;

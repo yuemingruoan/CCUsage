@@ -71,16 +71,16 @@ export function windowEndLabel(end: number, start: number, kind: QuotaKind): str
 
 export const AUTH_LABELS: Record<AuthMode, string> = {
   subscription: "订阅",
-  thirdParty: "第三方 API",
+  thirdParty: "第三方模型",
   mixed: "混合",
   unknown: "未知",
 };
 
 export const AUTH_HINTS: Record<AuthMode, string> = {
-  subscription: "订阅（OAuth）路径：请求写 1 小时缓存，计入 5h / 7d 订阅额度",
-  thirdParty: "第三方 API / API Key 路径：请求只有 5 分钟缓存或非 Claude 模型，不计入订阅额度",
-  mixed: "同一会话混用了订阅与第三方 API 请求，额度只统计订阅部分",
-  unknown: "缓存与请求 ID 都缺少可用信号，暂按订阅计入（保守）",
+  subscription: "使用 Claude 模型，计入 5h / 7d 订阅额度（直连、中转或共享登录都一样）",
+  thirdParty: "非 Claude 模型（deepseek/kimi/glm/grok/gpt 等），不消耗 Claude 订阅额度",
+  mixed: "同一会话混用了 Claude 模型与第三方模型",
+  unknown: "没有可用的模型信息",
 };
 
 // MARK: - Renderer-only helpers

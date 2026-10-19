@@ -79,46 +79,27 @@ Devices also report per-session metadata (title/project/cwd/start/end/authMode) 
 server aggregates each peer session's requests/tokens/cost and returns it on pull, so the UI can
 show other devices' sessions with their real titles instead of synthesized labels.
 
-### Subscription vs third-party API usage
+### Quota attribution: Claude models vs third-party models
 
-Model names alone cannot separate subscription usage from third-party APIs (resellers serve
-`claude-*` models). The classifier (packages/core/src/auth.ts) combines transcript evidence:
+Earlier attempts inferred the auth path from transcript evidence (1h vs 5m prompt cache, request-id
+shape, model name). Real multi-device data showed this is wrong for quota attribution: a relay or
+shared login can serve the user's own subscription while the client still writes 5m cache, so its
+Claude-model usage does consume the subscription quota. Correlating CC-reported weekly percentages
+with per-device cost confirmed relay-heavy hours moved the percentage even with almost no local
+usage.
 
-1. **cache TTL split** (strongest): the OAuth/subscription path writes 1-hour prompt cache
-   (`cacheWrite1h`); API-key and most third-party relays only write 5-minute cache (`cacheWrite5m`).
-   On real data: Mac subscription = 97.5% of cache tokens are 1h; Windows third-party device = 97.7%
-   are 5m (claude-model subset included). Ratio >= 75% 5m -> thirdParty, <= 5% 5m -> subscription,
-   in between -> mixed.
-2. **request/message id shape**: Anthropic responses yield `msg_…:req_…`; opaque ids (60-hex with
-   empty request id) only appear for non-Anthropic providers.
-3. **model family**: non-Claude model names are always third-party.
+The attribution rule is now model-family based:
 
-Unknown sessions (no cache/ids signal) are counted as subscription usage conservatively. Quota
-windows (`buildQuotaSnapshot` / `buildQuotaSnapshotFromData`) filter with
-`filterSubscriptionEntries`: third-party sessions do not consume the 5h/7d subscription limits;
-mixed sessions only drop their third-party requests.
+- Claude models (claude-*) -> subscription; they count toward 5h/7d quota and the cost estimate,
+  regardless of whether the request went direct, through a relay, or via an API-key-looking path;
+- non-Claude models (deepseek/kimi/glm/grok/gpt/...) -> third-party; they never consume the Claude
+  quota and are usually unpriced;
+- a session mixing both -> mixed.
 
-### Authoritative layer: mod auth fingerprint (v2.4)
-
-A high-fidelity relay can reverse-proxy genuine Anthropic responses, making model names, request
-ids and pricing indistinguishable from the subscription. The remaining authority is the Claude Code
-process itself: the mod reads `ANTHROPIC_BASE_URL`, `ANTHROPIC_AUTH_TOKEN`, `ANTHROPIC_API_KEY`,
-`CLAUDE_CODE_OAUTH_TOKEN` and the merged settings (`env`, `apiKeyHelper`) via `$.env` / `$.settings`,
-and reports a fingerprint on every bridge reading (`BridgeAuthFingerprint`: credential, baseUrlHost,
-thirdPartyBase). The app overlays it on the heuristic (`applyAuthHints`, persisted to
-`<appConfigDir>/session-auth.json`), and syncs the resulting `SessionSummary.authMode` to the server;
-server-side quota uses explicit `sessions.auth_mode` values via `sessionAuthModes`. Any custom base
-URL or API-key/token/helper credential is third-party regardless of response content; `/login`
-managed key on *.anthropic.com is subscription. A relay that injects an OAuth token while keeping
-the official host still looks like subscription usage - it consumes that account's quota; comparing
-account identity (oauthAccount) is the next step.
-
-Clients keep their own local snapshot for offline use, but when sync is online the
-quota cards use the server-computed snapshot (which includes every device) and the
-device list / other devices' usage is merged into the views. Remote entries are tagged
-with `deviceId` so the UI can attribute usage and show it. The device table is clickable:
-its detail page shows that device's per-day usage plus its sessions (title / time range /
-requests / cost), so multi-device usage can be inspected by date.
+Quota cost basis defaults to "all" (everything synced), with costBasis: "subscription" available
+for a strict Claude-only view. The mod auth fingerprint (BridgeAuthFingerprint: credential /
+baseUrlHost) is recorded for diagnostics only; it does not override attribution, because a custom
+BASE_URL does not prove which account the upstream request billed.
 
 ## Repository / process
 
