@@ -9,6 +9,7 @@
 
 import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
+import { filterSubscriptionEntries } from "./auth.js";
 import type {
   LimitEstimate,
   LimitEvent,
@@ -787,6 +788,9 @@ function computeSnapshot(input: {
   now?: number;
 }): QuotaSnapshot {
   const now = input.now ?? Date.now();
+  // Subscription quota accounting must ignore third-party API / API-key usage;
+  // unknown sessions stay in (conservative, matches old behaviour).
+  const subscriptionEntries = filterSubscriptionEntries(input.entries);
   const statusLineObservationCount = input.observations.filter(
     (observation) => observation.source === "statusLine"
   ).length;
@@ -799,13 +803,13 @@ function computeSnapshot(input: {
     // Weekly limits reset on a fixed schedule; the 5-hour mode is configurable.
     const kindWindows = quotaWindows(
       kind,
-      input.entries,
+      subscriptionEntries,
       input.observations,
       kind === "sevenDay" ? "fixedRolling" : input.mode,
       now
     );
     windows[kind] = kindWindows;
-    status[kind] = quotaStatus(kind, kindWindows, input.entries, input.planChanges, now);
+    status[kind] = quotaStatus(kind, kindWindows, subscriptionEntries, input.planChanges, now);
   }
   return {
     windows,

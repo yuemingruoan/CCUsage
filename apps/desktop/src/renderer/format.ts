@@ -1,7 +1,7 @@
 // Display formatting. Thin adapters over @ccusage/core Format (ported from Formatting.swift)
 // plus a few renderer-only helpers. All timestamps are epoch milliseconds.
 import { Format } from "@ccusage/core/pure";
-import type { QuotaKind, TimeGranularity, WindowMode } from "@ccusage/core/pure";
+import type { AuthMode, QuotaKind, TimeGranularity, WindowMode } from "@ccusage/core/pure";
 
 // MARK: - Labels copied from the Swift views
 
@@ -68,6 +68,20 @@ export function windowStartLabel(start: number, kind: QuotaKind): string {
 export function windowEndLabel(end: number, start: number, kind: QuotaKind): string {
   return Format.windowEnd(end, start, kind);
 }
+
+export const AUTH_LABELS: Record<AuthMode, string> = {
+  subscription: "订阅",
+  thirdParty: "第三方 API",
+  mixed: "混合",
+  unknown: "未知",
+};
+
+export const AUTH_HINTS: Record<AuthMode, string> = {
+  subscription: "订阅（OAuth）路径：请求写 1 小时缓存，计入 5h / 7d 订阅额度",
+  thirdParty: "第三方 API / API Key 路径：请求只有 5 分钟缓存或非 Claude 模型，不计入订阅额度",
+  mixed: "同一会话混用了订阅与第三方 API 请求，额度只统计订阅部分",
+  unknown: "缓存与请求 ID 都缺少可用信号，暂按订阅计入（保守）",
+};
 
 // MARK: - Renderer-only helpers
 

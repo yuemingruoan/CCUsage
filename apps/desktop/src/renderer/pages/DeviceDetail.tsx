@@ -16,7 +16,7 @@ import type { DailyUsage } from "../data";
 import { dateRange, dateTimeShort, dayLabel, formatTokens, relativeTime, usd } from "../format";
 import { DataTable } from "../components/tables";
 import type { TableColumn } from "../components/tables";
-import { Badge, Button, EqualHeightRow, SectionBar, SectionHeader, StatTile } from "../components/ui";
+import { AuthBadge, Badge, Button, EqualHeightRow, SectionBar, SectionHeader, StatTile } from "../components/ui";
 
 export function DeviceDetail({
   state,
@@ -108,6 +108,12 @@ export function DeviceDetail({
       title: "时间段",
       width: "minmax(190px, 1.6fr)",
       render: (session) => dateRange(session.start, session.end),
+    },
+    {
+      key: "auth",
+      title: "来源",
+      width: "110px",
+      render: (session) => <AuthBadge mode={session.authMode} />,
     },
     { key: "requests", title: "请求", width: "70px", align: "right", render: (session) => String(session.requestCount) },
     {

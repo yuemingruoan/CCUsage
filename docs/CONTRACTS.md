@@ -170,7 +170,9 @@ Passwords: node:crypto scrypt + salt; tokens: random hex stored sha256.
 - POST /login {username,password,device:{id?,name,platform,appVersion}} -> 200 LoginResponse (upsert device).
 - POST /logout {deviceId} -> 204 revoke token.
 - POST /ingest (auth) SyncIngestRequest -> SyncIngestResponse. Optional `sessions: SyncSessionMeta[]`
-  carries per-session metadata (id/title/projectName/cwd/start/end) so peers can render real titles.
+  carries per-session metadata (id/title/projectName/cwd/start/end/authMode) so peers can render real
+  titles and the subscription-vs-third-party classification (authMode: subscription | thirdParty |
+  mixed | unknown).
   Dedupe entries by id per account, observations by (kind,observed_at,resets_at,device_id); upsert
   device last_seen_at; upsert session metadata.
 - GET /sync?since=<seq>&mode=firstRequest (auth) -> SyncPullResponse: entries from OTHER devices with

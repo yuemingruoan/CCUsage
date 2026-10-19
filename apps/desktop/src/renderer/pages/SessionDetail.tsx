@@ -19,6 +19,7 @@ import { formatTokens, duration, dateTime, shellQuote, usd, GRANULARITY_LABELS, 
 import { UsageChart } from "../components/UsageChart";
 import { BucketTable, CostComposition, ModelTable } from "../components/tables";
 import {
+  AuthBadge,
   Button,
   EqualHeightRow,
   IconBranch,
@@ -96,7 +97,10 @@ export function SessionDetail({ state, session }: { state: AppState; session: Se
   return (
     <div className="page session-detail">
       <header className="session-header">
-        <div className="session-title">{session.title}</div>
+        <div className="session-title">
+            {session.title}
+            <AuthBadge mode={session.authMode} />
+          </div>
         <div className="session-meta">
           <span className="meta-item" title={session.cwd ?? session.projectName}>
             <IconFolder />

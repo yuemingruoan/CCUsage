@@ -29,7 +29,7 @@ import type {
   UsageEntry,
   UsageSnapshot,
 } from "@ccusage/core";
-import { mergeEntries, mergeObservations, SyncClient } from "@ccusage/core";
+import { classifySessionAuth, mergeEntries, mergeObservations, SyncClient } from "@ccusage/core";
 
 /** UI refresh cadence of the sync cycle (lead: ingest local delta + pull every ~15-30 s). */
 export const SYNC_INTERVAL_MS = 30_000;
@@ -139,6 +139,7 @@ export function synthesizeSession(sessionId: string, entries: UsageEntry[], devi
     requestCount: entries.length,
     subagentCount: agentIds.size,
     hasUnpricedRequests,
+    authMode: classifySessionAuth(entries),
   };
   if (deviceIds.size > 0) session.deviceIds = [...deviceIds];
   return session;
@@ -178,6 +179,7 @@ function sessionFromMeta(meta: SyncSessionMeta): SessionSummary {
     requestCount: meta.requests ?? 0,
     subagentCount: meta.subagentCount ?? 0,
     hasUnpricedRequests: meta.hasUnpricedRequests === true,
+    ...(meta.authMode !== undefined ? { authMode: meta.authMode } : {}),
   };
   if (meta.deviceId !== undefined) session.deviceIds = [meta.deviceId];
   return session;
@@ -573,6 +575,7 @@ export class SyncManager extends EventEmitter {
         ...(session.cwd !== undefined ? { cwd: session.cwd } : {}),
         start: session.start,
         end: session.end,
+        ...(session.authMode !== undefined ? { authMode: session.authMode } : {}),
       });
     }
     return changed;

@@ -18,6 +18,7 @@ import { Overview } from "./pages/Overview";
 import { SessionDetail } from "./pages/SessionDetail";
 import { SettingsWindow } from "./pages/Settings";
 import {
+  AuthBadge,
   Button,
   IconChart,
   IconCheck,
@@ -118,7 +119,10 @@ function SessionRow({
       title={session.title}
     >
       <span className="session-row-main">
-        <span className="session-row-title">{session.title}</span>
+        <span className="session-row-title">
+            {session.title}
+            <AuthBadge mode={session.authMode} />
+          </span>
         <span className="session-row-meta">{meta}</span>
       </span>
       <span className="session-row-cost">
@@ -270,6 +274,11 @@ function MainWindow() {
                 key={session.id}
                 session={session}
                 now={now}
+                deviceName={
+                  session.deviceIds != null && session.deviceIds.length > 0
+                    ? deviceNameById.get(session.deviceIds[0]!)
+                    : undefined
+                }
                 active={selection.kind === "session" && selection.id === session.id}
                 onClick={() => setSelection({ kind: "session", id: session.id })}
               />

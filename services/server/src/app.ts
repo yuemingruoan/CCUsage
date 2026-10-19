@@ -255,6 +255,10 @@ function normalizeSessionMeta(raw: unknown, index: number): { session: SyncSessi
   if (start === undefined || end === undefined) {
     return { error: "sessions[" + index + "].start/end must be timestamps" };
   }
+  const rawAuth = value.authMode;
+  const authMode = rawAuth === "subscription" || rawAuth === "thirdParty" || rawAuth === "mixed" || rawAuth === "unknown"
+    ? rawAuth
+    : undefined;
   const rawTitle = typeof value.title === "string" ? value.title.trim() : "";
   const rawProject = typeof value.projectName === "string" ? value.projectName.trim() : "";
   const cwd = typeof value.cwd === "string" && value.cwd.length > 0 ? value.cwd.slice(0, MAX_CWD_LENGTH) : undefined;
@@ -266,6 +270,7 @@ function normalizeSessionMeta(raw: unknown, index: number): { session: SyncSessi
       ...(cwd !== undefined ? { cwd } : {}),
       start: Math.round(start),
       end: Math.round(end),
+      ...(authMode !== undefined ? { authMode } : {}),
     },
   };
 }

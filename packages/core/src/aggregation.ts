@@ -14,6 +14,7 @@ import type {
   UsageSnapshot
 } from "./types.js";
 import { Pricing } from "./pricing.js";
+import { classifySessionAuth } from "./auth.js";
 import { addDays, isoWeekday, startOfDay, zonedEpoch, zonedParts } from "./time-utils.js";
 
 // MARK: - Token helpers (Swift TokenCounts += / total)

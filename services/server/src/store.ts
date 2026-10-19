@@ -21,6 +21,7 @@ import type {
   TokenCounts,
   UsageEntry,
 } from "@ccusage/core";
+import { classifyAuthSignals } from "@ccusage/core";
 
 /** SQLite stores timestamps as INTEGER epoch milliseconds, like the app. */
 const SCHEMA = `
@@ -112,6 +113,7 @@ CREATE TABLE IF NOT EXISTS sessions (
   cwd          TEXT,
   start        INTEGER NOT NULL,
   end          INTEGER NOT NULL,
+  auth_mode    TEXT,
   updated_at   INTEGER NOT NULL,
   PRIMARY KEY (account_id, id)
 );
@@ -229,6 +231,11 @@ export class SyncStore {
     this.db.exec("PRAGMA synchronous = NORMAL");
     this.db.exec("PRAGMA busy_timeout = 5000");
     this.db.exec(SCHEMA);
+    // Lightweight migration for databases created before session auth tracking.
+    const sessionColumns = this.db.prepare("PRAGMA table_info(sessions)").all() as SqlRow[];
+    if (!sessionColumns.some((column) => str(column.name) === "auth_mode")) {
+      this.db.exec("ALTER TABLE sessions ADD COLUMN auth_mode TEXT");
+    }
   }
 
   close(): void {
@@ -577,8 +584,8 @@ export class SyncStore {
     if (sessions.length === 0) return 0;
     return this.transaction(() => {
       const upsert = this.db.prepare(
-        `INSERT INTO sessions (account_id, device_id, id, title, project_name, cwd, start, end, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO sessions (account_id, device_id, id, title, project_name, cwd, start, end, auth_mode, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(account_id, id) DO UPDATE SET
              device_id = excluded.device_id,
              title = excluded.title,
@@ -600,6 +607,7 @@ export class SyncStore {
           session.cwd ?? null,
           Math.round(session.start),
           Math.round(session.end),
+          session.authMode ?? null,
           now
         );
         accepted += Number(result.changes);
@@ -617,7 +625,7 @@ export class SyncStore {
     const meta = new Map<string, SyncSessionMeta>();
     const rows = this.db
       .prepare(
-        "SELECT id, device_id, title, project_name, cwd, start, end FROM sessions WHERE account_id = ? AND device_id <> ? ORDER BY end DESC LIMIT ?"
+        "SELECT id, device_id, title, project_name, cwd, start, end, auth_mode FROM sessions WHERE account_id = ? AND device_id <> ? ORDER BY end DESC LIMIT ?"
       )
       .all(accountId, deviceId, limit) as SqlRow[];
     for (const row of rows) {
@@ -629,6 +637,7 @@ export class SyncStore {
         start: num(row.start),
         end: num(row.end),
         deviceId: str(row.device_id),
+        ...(str(row.auth_mode) ? { authMode: str(row.auth_mode) as SyncSessionMeta["authMode"] } : {}),
       });
     }
     const aggregates = this.db
@@ -651,6 +660,8 @@ export class SyncStore {
                 SUM(json_extract(cost_json, '$.webSearch')) AS cost_web_search,
                 SUM(CASE WHEN is_priced = 0 THEN 1 ELSE 0 END) AS unpriced,
                 COUNT(DISTINCT agent_id) AS subagents,
+                SUM(CASE WHEN model LIKE 'claude-%' THEN 1 ELSE 0 END) AS claude_requests,
+                SUM(CASE WHEN id LIKE 'msg_%:req_%' THEN 1 ELSE 0 END) AS anthropic_ids,
                 GROUP_CONCAT(DISTINCT model) AS models
            FROM entries
           WHERE account_id = ? AND device_id <> ?
@@ -675,6 +686,13 @@ export class SyncStore {
         webSearch: num(row.cost_web_search),
       };
       const models = str(row.models).split(",").filter((model) => model.length > 0);
+      const fallbackAuth = classifyAuthSignals({
+        requests: num(row.requests),
+        cacheWrite1h: num(row.cache_write_1h),
+        cacheWrite5m: num(row.cache_write_5m),
+        claudeRequests: num(row.claude_requests),
+        anthropicIdRequests: num(row.anthropic_ids),
+      });
       const existing = meta.get(id);
       if (existing) {
         existing.requests = num(row.requests);
@@ -685,6 +703,7 @@ export class SyncStore {
         existing.models = models;
         existing.subagentCount = num(row.subagents);
         existing.hasUnpricedRequests = num(row.unpriced) > 0;
+        existing.authMode = existing.authMode ?? fallbackAuth;
         existing.deviceId = existing.deviceId ?? str(row.device_id);
       } else {
         meta.set(id, {
@@ -700,6 +719,7 @@ export class SyncStore {
           models,
           subagentCount: num(row.subagents),
           hasUnpricedRequests: num(row.unpriced) > 0,
+          authMode: fallbackAuth,
         });
       }
     }

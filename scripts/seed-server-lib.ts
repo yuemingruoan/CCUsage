@@ -46,12 +46,16 @@ export function makeEntries(deviceId: string, startMs: number, count: number, se
     const sessionIndex = Math.min(sessionCount - 1, Math.floor((i * sessionCount) / Math.max(count, 1)));
     const model = MODEL_CHOICES[Math.floor(rnd() * MODEL_CHOICES.length)] as string;
     const big = model.includes("opus") ? 1.6 : model.includes("sonnet") ? 1 : 0.5;
+    // Demo separation: the laptop uses the subscription path (1h cache), the studio
+    // device stands in for an API-key / third-party setup (5m cache only).
+    const thirdParty = deviceId.includes("studio");
+    const cacheWrite = Math.floor((thirdParty ? 10_000 : 4_000) * big + rnd() * 2_000);
     const tokens: TokenCounts = {
       input: 4 + Math.floor(rnd() * 20),
       output: Math.floor((300 + rnd() * 1_500) * big),
       cacheRead: Math.floor((80_000 + rnd() * 150_000) * big),
-      cacheWrite5m: Math.floor((500 + rnd() * 2_000) * big),
-      cacheWrite1h: Math.floor((1_000 + rnd() * 6_000) * big),
+      cacheWrite5m: thirdParty ? cacheWrite : 0,
+      cacheWrite1h: thirdParty ? 0 : cacheWrite,
       webSearches: rnd() < 0.05 ? 1 : 0,
     };
     const cost = Pricing.cost(tokens, model, false) ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, webSearch: 0 };
@@ -101,6 +105,7 @@ export function makeEntries(deviceId: string, startMs: number, count: number, se
       models: [...accumulator.models],
       subagentCount: 0,
       hasUnpricedRequests: false,
+      authMode: deviceId.includes("studio") ? "thirdParty" : "subscription",
     };
   });
   return { entries, sessions };

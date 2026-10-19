@@ -1831,3 +1831,8 @@ input:focus-visible {
 .muted {
   color: var(--text-secondary);
 }
+
+.auth-badge {
+  margin-left: 6px;
+  vertical-align: middle;
+}

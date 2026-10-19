@@ -8,6 +8,7 @@ export * from "./format.js";
 export * from "./transcript-parser.js";
 export * from "./scanner.js";
 export * from "./aggregation.js";
+export * from "./auth.js";
 export * from "./quota.js";
 export * from "./sync-client.js";
 // Generated from packages/mod/plugin by `npm run gen:mod`; the Electron mod installer

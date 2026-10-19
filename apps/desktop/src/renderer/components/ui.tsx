@@ -2,6 +2,8 @@
 // Ports of the Swift helpers in Formatting.swift (StatTile / EqualHeightRow / SectionBar /
 // SectionHeader) plus a few controls that SwiftUI provided for free.
 import type { CSSProperties, ReactNode } from "react";
+import type { AuthMode } from "@ccusage/core/pure";
+import { AUTH_HINTS, AUTH_LABELS } from "../format";
 
 // MARK: - Sections
 
@@ -53,6 +55,16 @@ export function StatTile({ title, value, caption }: { title: string; value: stri
 export function Badge({ children, tone }: { children: ReactNode; tone?: "neutral" | "server" | "warn" | "error" }) {
   const className = "badge" + (tone != null && tone !== "neutral" ? " badge-" + tone : "");
   return <span className={className}>{children}</span>;
+}
+
+export function AuthBadge({ mode }: { mode?: AuthMode | undefined }) {
+  if (mode == null || mode === "unknown") return null;
+  const tone = mode === "subscription" ? "server" : mode === "thirdParty" ? "warn" : "neutral";
+  return (
+    <span className="auth-badge" title={AUTH_HINTS[mode]}>
+      <Badge tone={tone}>{AUTH_LABELS[mode]}</Badge>
+    </span>
+  );
 }
 
 export function StatusDot({ tone }: { tone: "green" | "orange" | "red" | "gray" }) {

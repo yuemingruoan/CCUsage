@@ -75,9 +75,28 @@ device B app ──ingest(...)────────────────�
 device A ◀──pull(others' entries, devices, account quota)──┘
 ```
 
-Devices also report per-session metadata (title/project/cwd/start/end) on ingest; the server
-aggregates each peer session's requests/tokens/cost and returns it on pull, so the UI can show
-other devices' sessions with their real titles instead of synthesized labels.
+Devices also report per-session metadata (title/project/cwd/start/end/authMode) on ingest; the
+server aggregates each peer session's requests/tokens/cost and returns it on pull, so the UI can
+show other devices' sessions with their real titles instead of synthesized labels.
+
+### Subscription vs third-party API usage
+
+Model names alone cannot separate subscription usage from third-party APIs (resellers serve
+`claude-*` models). The classifier (packages/core/src/auth.ts) combines transcript evidence:
+
+1. **cache TTL split** (strongest): the OAuth/subscription path writes 1-hour prompt cache
+   (`cacheWrite1h`); API-key and most third-party relays only write 5-minute cache (`cacheWrite5m`).
+   On real data: Mac subscription = 97.5% of cache tokens are 1h; Windows third-party device = 97.7%
+   are 5m (claude-model subset included). Ratio >= 75% 5m -> thirdParty, <= 5% 5m -> subscription,
+   in between -> mixed.
+2. **request/message id shape**: Anthropic responses yield `msg_…:req_…`; opaque ids (60-hex with
+   empty request id) only appear for non-Anthropic providers.
+3. **model family**: non-Claude model names are always third-party.
+
+Unknown sessions (no cache/ids signal) are counted as subscription usage conservatively. Quota
+windows (`buildQuotaSnapshot` / `buildQuotaSnapshotFromData`) filter with
+`filterSubscriptionEntries`: third-party sessions do not consume the 5h/7d subscription limits;
+mixed sessions only drop their third-party requests.
 
 Clients keep their own local snapshot for offline use, but when sync is online the
 quota cards use the server-computed snapshot (which includes every device) and the

@@ -14,7 +14,7 @@
 
 - npm install：100 包（electron 44.9.0 / react 19 / express 5 / esbuild / tsx / typescript）。
 - npm run build：gen:mod + core(tsc) + server(tsc) + desktop(esbuild 5/5 entries) 全绿。
-- npm test：107 tests / 107 pass（core 58、server 42、mod 7）。
+- npm test：112 tests / 112 pass（core 63、server 42、mod 7）。
 - npm run smoke:mod：真实 register.ts + 假 engine + 真 Unix socket 服务，6 次推送 / 1 条回退日志，刷新/measure/refreshId/reportNow/回退全部验证。
 - npm run parity：125 files, 48191 requests, 86 sessions, total $6327.55 —— 与原 Swift 版报告逐字节一致（PARITY OK）。
 - npm run screenshot：本地起服务端 + 2 设备播种 + Electron 截图；main.png / settings.png / tray.png 均非空（含 2 台设备徽标、服务端额度、设备表）。
@@ -31,6 +31,18 @@
   可继续点进会话详情；
 - 服务端 sessions 表存储元数据；旧客户端未上报 sessions 时回退到按条目聚合的占位标题；
 - 截图新增 screenshots/device.png（demo 数据）。
+
+## 订阅 vs 第三方 API 识别（2026-10-19）
+
+- 新增 core/auth.ts：根据 **缓存 TTL 比例**（订阅写 1h 缓存、API Key/三方中转基本只写 5m）、
+  Anthropic 请求 ID 形状、模型名三路信号，判定会话来源为订阅 / 第三方 API / 混合 / 未知；
+- 实测分离度：Mac 订阅设备 97.5% 缓存 token 是 1h（89 会话中 84 订阅、1 混合、1 API 型）；
+  Windows 三方设备 97.7% 是 5m（180 会话中 133 第三方、4 订阅、41 纯第三方模型）；
+- 会话列表 / 会话详情 / 设备详情新增「订阅 / 第三方 API / 混合」徽标；
+- 额度窗口（5h / 7d）只统计订阅会话（未知按订阅保守计入，混合会话只剔除第三方请求），
+  Windows 上走第三方 API 的 claude-* 请求不再虚增订阅额度；
+- authMode 随 SyncSessionMeta 同步到服务端 sessions 表，服务端对旧客户端也可用条目聚合兜底判定；
+- 新增 packages/core/test/auth.test.ts（5 个用例）。
 
 ## 打包产物（npm run dist）
 

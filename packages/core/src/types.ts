@@ -48,6 +48,9 @@ export interface SessionMetadata {
   version?: string;
 }
 
+/** Whether usage came from the subscription (OAuth) or a third-party API / API key. */
+export type AuthMode = "subscription" | "thirdParty" | "mixed" | "unknown";
+
 export interface SessionSummary {
   id: string;
   title: string;
@@ -64,6 +67,8 @@ export interface SessionSummary {
   requestCount: number;
   subagentCount: number;
   hasUnpricedRequests: boolean;
+  /** Subscription vs third-party API heuristic (see auth.ts). */
+  authMode?: AuthMode;
   /** lastCost Claude Code itself wrote to ~/.claude.json for this session, if any. */
   recordedCost?: number;
   /** Devices that contributed entries to this session (local device omitted). */
@@ -243,6 +248,7 @@ export interface SyncSessionMeta {
   models?: string[];
   subagentCount?: number;
   hasUnpricedRequests?: boolean;
+  authMode?: AuthMode;
 }
 
 export interface SyncIngestRequest {
