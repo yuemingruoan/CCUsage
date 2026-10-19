@@ -36,12 +36,14 @@ export function Overview({
   now,
   onSelectSession,
   onRefreshState,
+  onSelectDevice,
 }: {
   state: AppState;
   range: RangeKey;
   now: number;
   onSelectSession: (id: string) => void;
   onRefreshState: () => Promise<void>;
+  onSelectDevice?: ((id: string) => void) | undefined;
 }) {
   const quota = quotaSource(state).quota;
   const serverDeviceCount = quotaSource(state).serverDeviceCount;

@@ -4,7 +4,7 @@
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync, mkdirSync, rmSync, statSync } from "node:fs";
 import { seedDemoDir } from "./demo-fixtures.ts";
 import { createServer } from "../services/server/src/app.ts";
 import { SyncClient } from "@ccusage/core";
@@ -15,6 +15,9 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const demoDir = join(root, "demo-data");
 const shotsDir = join(root, "screenshots");
 mkdirSync(shotsDir, { recursive: true });
+for (const stale of ["main.png", "settings.png", "tray.png", "device.png"]) {
+  rmSync(join(shotsDir, stale), { force: true });
+}
 
 seedDemoDir(demoDir);
 const now = Date.now();
@@ -53,7 +56,7 @@ if (!existsSync(main)) {
 console.log("launching electron for screenshots...");
 const child = spawn(electron, [main, "--no-sandbox"], {
   cwd: root,
-  env: (() => { const env: NodeJS.ProcessEnv = { ...process.env, CCUSAGE_DEMO_DIR: demoDir, CCUSAGE_SCREENSHOT_DIR: shotsDir, CCUSAGE_SCREENSHOT_WAIT_MS: "3000" }; delete env.ELECTRON_RUN_AS_NODE; return env; })(),
+  env: (() => { const env: NodeJS.ProcessEnv = { ...process.env, CCUSAGE_DEMO_DIR: demoDir, CCUSAGE_SCREENSHOT_DIR: shotsDir, CCUSAGE_SCREENSHOT_WAIT_MS: "3000", CCUSAGE_SCREENSHOT_DEVICE: studio.id }; delete env.ELECTRON_RUN_AS_NODE; return env; })(),
   stdio: ["ignore", "pipe", "pipe"],
 });
 let logs = "";
@@ -64,7 +67,8 @@ const code = await new Promise<number>(resolve => {
   child.once("exit", c => { clearTimeout(timer); resolve(c ?? 0); });
 });
 console.log("electron exited", code);
-const wanted = ["main.png", "settings.png", "tray.png"];
+if (process.env.CCUSAGE_SCREENSHOT_VERBOSE) console.log("[app log]\n" + logs);
+const wanted = ["main.png", "settings.png", "tray.png", "device.png"];
 let ok = true;
 for (const name of wanted) {
   const file = join(shotsDir, name);

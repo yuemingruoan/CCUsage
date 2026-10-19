@@ -14,12 +14,23 @@
 
 - npm install：100 包（electron 44.9.0 / react 19 / express 5 / esbuild / tsx / typescript）。
 - npm run build：gen:mod + core(tsc) + server(tsc) + desktop(esbuild 5/5 entries) 全绿。
-- npm test：105 tests / 105 pass（core 58、server 40、mod 7）。
+- npm test：107 tests / 107 pass（core 58、server 42、mod 7）。
 - npm run smoke:mod：真实 register.ts + 假 engine + 真 Unix socket 服务，6 次推送 / 1 条回退日志，刷新/measure/refreshId/reportNow/回退全部验证。
 - npm run parity：125 files, 48191 requests, 86 sessions, total $6327.55 —— 与原 Swift 版报告逐字节一致（PARITY OK）。
 - npm run screenshot：本地起服务端 + 2 设备播种 + Electron 截图；main.png / settings.png / tray.png 均非空（含 2 台设备徽标、服务端额度、设备表）。
 - npm run seed-server：demo 账号 demo/demo123 + 2 台设备，/sync 返回对方设备 90 条用量 + 双设备合并 5h 窗口，/health 200。
 - 真实数据模式（隔离配置目录）已验证 UI 正常；真实数据与统计明细不随仓库分发。
+
+## 多设备会话标题 / 设备详情（2026-10-19）
+
+- 同步协议新增 SyncSessionMeta：设备 ingest 时随用量上报会话元数据（标题/项目/cwd/起止时间），
+  服务端聚合每个对端会话的请求数/tokens/折算金额并在 pull 时返回；
+- 会话列表里远端会话显示**真实标题**（如「Studio 渲染管线优化」）与设备名 + 具体时间段，
+  不再是重复的「<设备> 的用量」；未定价模型显示「未定价」而不是 $0.00；
+- 概览「设备」表可点击进入**设备详情页**：该设备按日期汇总表 + 该设备会话列表（标题/时间段/请求/折算），
+  可继续点进会话详情；
+- 服务端 sessions 表存储元数据；旧客户端未上报 sessions 时回退到按条目聚合的占位标题；
+- 截图新增 screenshots/device.png（demo 数据）。
 
 ## 打包产物（npm run dist）
 

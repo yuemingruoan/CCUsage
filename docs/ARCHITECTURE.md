@@ -75,10 +75,16 @@ device B app ──ingest(...)────────────────�
 device A ◀──pull(others' entries, devices, account quota)──┘
 ```
 
+Devices also report per-session metadata (title/project/cwd/start/end) on ingest; the server
+aggregates each peer session's requests/tokens/cost and returns it on pull, so the UI can show
+other devices' sessions with their real titles instead of synthesized labels.
+
 Clients keep their own local snapshot for offline use, but when sync is online the
 quota cards use the server-computed snapshot (which includes every device) and the
 device list / other devices' usage is merged into the views. Remote entries are tagged
-with `deviceId` so the UI can attribute usage and show it.
+with `deviceId` so the UI can attribute usage and show it. The device table is clickable:
+its detail page shows that device's per-day usage plus its sessions (title / time range /
+requests / cost), so multi-device usage can be inspected by date.
 
 ## Repository / process
 

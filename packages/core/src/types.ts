@@ -224,11 +224,34 @@ export interface ServerConfig {
   token?: string;
 }
 
+/**
+ * Session metadata a device reports so other devices can display its sessions with
+ * real titles and totals. Aggregates (requests/tokens/cost) are filled by the server
+ * when it hands a peer session to another device.
+ */
+export interface SyncSessionMeta {
+  id: string;
+  title: string;
+  projectName: string;
+  cwd?: string;
+  start: number;
+  end: number;
+  deviceId?: string;
+  requests?: number;
+  tokens?: TokenCounts;
+  cost?: CostBreakdown;
+  models?: string[];
+  subagentCount?: number;
+  hasUnpricedRequests?: boolean;
+}
+
 export interface SyncIngestRequest {
   device: DeviceInfo;
   entries: UsageEntry[];
   observations: QuotaObservation[];
   plan?: PlanInfo;
+  /** Metadata for the sessions whose entries are being uploaded (or changed since the last upload). */
+  sessions?: SyncSessionMeta[];
   /** Entries the device has already uploaded (for server-side cursor). */
   cursor?: number;
 }
@@ -238,6 +261,7 @@ export interface SyncIngestResponse {
   accepted: number;
   deduped: number;
   cursor: number;
+  sessionsAccepted?: number;
 }
 
 export interface SyncPullResponse {
@@ -246,6 +270,8 @@ export interface SyncPullResponse {
   entries: UsageEntry[];
   observations: QuotaObservation[];
   devices: DeviceInfo[];
+  /** Sessions owned by other devices, with real titles and server-computed totals. */
+  sessions: SyncSessionMeta[];
   plan?: PlanInfo;
   quota?: QuotaSnapshot;
 }

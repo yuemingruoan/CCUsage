@@ -841,6 +841,26 @@ async function runScreenshotMode(appController: AppController): Promise<void> {
     trayPopover.show();
     await delay(1_000);
     await captureWindow(trayPopover, join(targetDirectory, "tray.png"));
+
+    // Device detail page (per-day usage + peer session titles), when the harness names a device.
+    const screenshotDevice = process.env.CCUSAGE_SCREENSHOT_DEVICE;
+    if (screenshotDevice && screenshotDevice.length > 0) {
+      const deviceWindow = new BrowserWindow({
+        width: 1200,
+        height: 800,
+        minWidth: 960,
+        minHeight: 640,
+        title: "CC 用量 · 设备",
+        show: false,
+        backgroundColor: windowBackground(),
+        webPreferences: windowPreferences(),
+      });
+      loadWindow(deviceWindow, INDEX_HTML, { view: "device", device: screenshotDevice });
+      await waitForWindowLoad(deviceWindow);
+      deviceWindow.show();
+      await delay(1_500);
+      await captureWindow(deviceWindow, join(targetDirectory, "device.png"));
+    }
   } catch (error) {
     console.error("[screenshot] failed:", error);
   } finally {

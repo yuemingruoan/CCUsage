@@ -12,7 +12,8 @@ import {
   rangeStart,
 } from "./data";
 import type { RangeKey, SessionSort } from "./data";
-import { relativeTime, scanDuration, timeHMS, usd } from "./format";
+import { dateRange, relativeTime, scanDuration, timeHMS, usd } from "./format";
+import { DeviceDetail } from "./pages/DeviceDetail";
 import { Overview } from "./pages/Overview";
 import { SessionDetail } from "./pages/SessionDetail";
 import { SettingsWindow } from "./pages/Settings";
@@ -28,7 +29,15 @@ import {
   Spinner,
 } from "./components/ui";
 
-type Selection = { kind: "overview" } | { kind: "session"; id: string };
+type Selection = { kind: "overview" } | { kind: "session"; id: string } | { kind: "device"; id: string };
+
+/** Initial selection from the URL (?view=device&device=<id>), used by the screenshot harness. */
+function initialSelection(): Selection {
+  const params = new URLSearchParams(window.location.search);
+  const device = params.get("device");
+  if (params.get("view") === "device" && device != null && device.length > 0) return { kind: "device", id: device };
+  return { kind: "overview" };
+}
 
 function SortMenu({ sort, onChange }: { sort: SessionSort; onChange: (sort: SessionSort) => void }) {
   const [open, setOpen] = useState(false);
@@ -81,18 +90,24 @@ function SessionRow({
   session,
   active,
   now,
+  deviceName,
   onClick,
 }: {
   session: SessionSummary;
   active: boolean;
   now: number;
+  deviceName?: string | undefined;
   onClick: () => void;
 }) {
-  const meta =
-    session.projectName +
-    " · " +
-    relativeTime(session.end, now) +
-    (session.subagentCount > 0 ? " · " + session.subagentCount + " 子代理" : "");
+  const remote = session.deviceIds != null && session.deviceIds.length > 0;
+  const meta = remote
+    ? (deviceName ?? "其他设备") + " · " + dateRange(session.start, session.end) +
+      (session.subagentCount > 0 ? " · " + session.subagentCount + " 子代理" : "")
+    : session.projectName +
+      " · " +
+      relativeTime(session.end, now) +
+      (session.subagentCount > 0 ? " · " + session.subagentCount + " 子代理" : "");
+  const cost = costTotal(session.cost);
   return (
     <button
       type="button"
@@ -106,7 +121,9 @@ function SessionRow({
         <span className="session-row-title">{session.title}</span>
         <span className="session-row-meta">{meta}</span>
       </span>
-      <span className="session-row-cost">{usd(costTotal(session.cost))}</span>
+      <span className="session-row-cost">
+        {session.hasUnpricedRequests && cost === 0 ? "未定价" : usd(cost)}
+      </span>
     </button>
   );
 }
@@ -117,7 +134,7 @@ function MainWindow() {
   const [range, setRange] = useState<RangeKey>("week");
   const [sort, setSort] = useState<SessionSort>("recent");
   const [search, setSearch] = useState("");
-  const [selection, setSelection] = useState<Selection>({ kind: "overview" });
+  const [selection, setSelection] = useState<Selection>(initialSelection);
   const [refreshing, setRefreshing] = useState(false);
   const refreshingRef = useRef(false);
 
@@ -156,6 +173,11 @@ function MainWindow() {
     () => (state == null ? [] : filterSessions(state.snapshot.sessions, start, search, sort)),
     [state, start, search, sort],
   );
+  const deviceNameById = useMemo(() => {
+    const names = new Map<string, string>();
+    for (const device of state?.sync.devices ?? []) names.set(device.id, device.name);
+    return names;
+  }, [state?.sync.devices]);
 
   if (state == null) {
     return (
@@ -176,6 +198,16 @@ function MainWindow() {
     detail = <div className="page empty-page">会话不存在</div>;
   } else if (selectedSession != null) {
     detail = <SessionDetail state={state} session={selectedSession} />;
+  } else if (selection.kind === "device") {
+    detail = (
+      <DeviceDetail
+        state={state}
+        deviceId={selection.id}
+        now={now}
+        onSelectSession={(id) => setSelection({ kind: "session", id })}
+        onBack={() => setSelection({ kind: "overview" })}
+      />
+    );
   } else if (loaded) {
     detail = (
       <Overview
@@ -184,6 +216,7 @@ function MainWindow() {
         now={now}
         onSelectSession={(id) => setSelection({ kind: "session", id })}
         onRefreshState={refreshState}
+        onSelectDevice={(id) => setSelection({ kind: "device", id })}
       />
     );
   } else {

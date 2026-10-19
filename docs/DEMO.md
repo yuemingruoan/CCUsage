@@ -12,7 +12,7 @@
 
     npm run seed           # 生成 demo-data/：6 个会话、多天用量、5h/7d 上报
     npm run screenshot     # 启动本地同步服务 + 两个模拟设备 + Electron，输出：
-                           # screenshots/main.png、settings.png、tray.png
+                           # screenshots/main.png、settings.png、tray.png、device.png
 
 截图说明：overview 里可见 5 小时 / 每周额度卡（含「含 2 台设备」徽标）、按时间段折线图、
 额度窗口表、按模型表、花费最多的会话、设备表（Demo MacBook / Demo Studio）；

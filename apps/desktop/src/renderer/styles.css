@@ -1803,3 +1803,31 @@ input:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+/* Device detail page */
+.device-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 4px;
+}
+.device-header-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.device-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.device-meta {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.muted {
+  color: var(--text-secondary);
+}

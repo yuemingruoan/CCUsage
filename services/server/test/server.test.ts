@@ -519,3 +519,72 @@ describe("core SyncClient interop", () => {
       await assert.rejects(first.state(), /未登录|401|unauthorized/);
     }));
 });
+describe("GET /sync sessions", () => {
+  test("returns peer session metadata with real titles and aggregated totals", () =>
+    withServer(async (server) => {
+      const alice = await createAccount(server, "alice");
+      const laptop = makeDevice("Alice Laptop");
+      const laptopLogin = await call(server, "POST", "/login", { body: { username: alice.username, password: alice.password, device: laptop } });
+      assert.equal(laptopLogin.status, 200);
+      const laptopToken = (laptopLogin.body as LoginResponse).token;
+      const now = Date.now();
+      const entry = (id: string, sessionId: string, timestamp: number, cost: number, priced = true): UsageEntry => ({
+        ...usageEntry(id, timestamp, cost),
+        sessionId,
+        ...(priced ? {} : { model: "deepseek-flash", cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, webSearch: 0 } }),
+        isPriced: priced,
+      });
+      const ingest = await call(server, "POST", "/ingest", {
+        token: alice.token,
+        body: {
+          device: alice.device,
+          entries: [
+            entry("e1", "s-one", now - 3_000_000, 1.5),
+            entry("e2", "s-one", now - 2_900_000, 0.5),
+            entry("e3", "s-two", now - 1_400_000, 2),
+            entry("e4", "s-three", now - 600_000, 0, false),
+          ],
+          observations: [],
+          sessions: [
+            { id: "s-one", title: "渲染管线优化", projectName: "alpha", cwd: "/work/alpha", start: now - 3_600_000, end: now - 2_800_000 },
+            { id: "s-two", title: "发布构建", projectName: "beta", start: now - 1_500_000, end: now - 1_300_000 },
+            { id: "s-three", title: "第三方模型实验", projectName: "gamma", start: now - 700_000, end: now - 500_000 },
+          ],
+        },
+      });
+      assert.equal(ingest.status, 200, ingest.text);
+
+      const pull = await call(server, "GET", "/sync?since=0", { token: laptopToken });
+      assert.equal(pull.status, 200, pull.text);
+      const body = pull.body as SyncPullResponse;
+      assert.equal(body.sessions.length, 3);
+      const one = body.sessions.find((session) => session.id === "s-one");
+      assert.ok(one, "s-one present");
+      assert.equal(one.title, "渲染管线优化");
+      assert.equal(one.projectName, "alpha");
+      assert.equal(one.deviceId, alice.deviceId);
+      assert.equal(one.requests, 2);
+      assert.equal(one.tokens?.input, 200);
+      assert.equal(one.cost?.input, 2);
+      assert.deepEqual(one.models, ["claude-sonnet-4-5"]);
+      const three = body.sessions.find((session) => session.id === "s-three");
+      assert.ok(three);
+      assert.equal(three.hasUnpricedRequests, true);
+
+      // The reporting device never receives its own sessions back as peers.
+      const own = await call(server, "GET", "/sync?since=0", { token: alice.token });
+      assert.equal(own.status, 200);
+      assert.deepEqual((own.body as SyncPullResponse).sessions, []);
+    }));
+
+  test("rejects malformed session metadata", () =>
+    withServer(async (server) => {
+      const alice = await createAccount(server, "alice");
+      const response = await call(server, "POST", "/ingest", {
+        token: alice.token,
+        body: { device: alice.device, entries: [], observations: [], sessions: [{ title: "no id" }] },
+      });
+      assert.equal(response.status, 400);
+      errorOf(response);
+    }));
+});

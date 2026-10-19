@@ -424,12 +424,14 @@ export function DeviceTable({
   todayStats,
   now,
   height,
+  onSelect,
 }: {
   devices: readonly DeviceInfo[];
   selfDeviceId?: string | undefined;
   todayStats: ReadonlyMap<string, DeviceUsage>;
   now: number;
   height?: number | undefined;
+  onSelect?: ((device: DeviceInfo) => void) | undefined;
 }) {
   const sorted = [...devices].sort((a, b) => Number(isSelf(b, selfDeviceId)) - Number(isSelf(a, selfDeviceId)));
   const columns: TableColumn<DeviceInfo>[] = [
@@ -485,6 +487,7 @@ export function DeviceTable({
       height={height}
       ariaLabel="设备"
       emptyText="暂无设备 · 在设置的「服务端」中登录后显示"
+      onRowClick={onSelect != null ? (device) => onSelect(device) : undefined}
     />
   );
 }

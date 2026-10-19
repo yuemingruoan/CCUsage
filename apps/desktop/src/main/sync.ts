@@ -22,6 +22,7 @@ import type {
   QuotaSnapshot,
   ServerConfig,
   SessionSummary,
+  SyncSessionMeta,
   SyncState,
   SyncStatus,
   TokenCounts,
@@ -159,16 +160,42 @@ function mostFrequentDeviceName(deviceIds: Set<string>, deviceNames: ReadonlyMap
   return best;
 }
 
+/** Build a session summary from synced peer metadata (server-computed totals when present). */
+function sessionFromMeta(meta: SyncSessionMeta): SessionSummary {
+  const tokens = meta.tokens ?? emptyTokens();
+  const cost = meta.cost ?? emptyCost();
+  const session: SessionSummary = {
+    id: meta.id,
+    title: meta.title,
+    projectName: meta.projectName,
+    ...(meta.cwd !== undefined ? { cwd: meta.cwd } : {}),
+    start: meta.start,
+    end: meta.end,
+    models: meta.models ?? [],
+    tokens,
+    cost,
+    subagentCost: 0,
+    requestCount: meta.requests ?? 0,
+    subagentCount: meta.subagentCount ?? 0,
+    hasUnpricedRequests: meta.hasUnpricedRequests === true,
+  };
+  if (meta.deviceId !== undefined) session.deviceIds = [meta.deviceId];
+  return session;
+}
+
 /**
  * Merge entries pulled from other devices into the local snapshot: dedupe by id (local wins,
- * deviceId kept) and synthesize session summaries for sessions that only exist remotely.
+ * deviceId kept) and build session summaries for sessions that only exist remotely — preferring
+ * the synced session metadata (real title, server-computed totals), falling back to a synthesized
+ * summary for peers running an older client.
  */
 export function mergeRemoteSnapshot(
   local: UsageSnapshot,
   remoteEntries: UsageEntry[],
   deviceNames?: ReadonlyMap<string, string>,
+  remoteSessions?: ReadonlyMap<string, SyncSessionMeta>,
 ): UsageSnapshot {
-  if (remoteEntries.length === 0) return local;
+  if (remoteEntries.length === 0 && (remoteSessions === undefined || remoteSessions.size === 0)) return local;
   const merged = mergeEntries(local.entries, remoteEntries);
   const entries = [...merged].sort((a, b) => a.timestamp - b.timestamp);
   const entriesBySession: Record<string, UsageEntry[]> = {};
@@ -177,6 +204,11 @@ export function mergeRemoteSnapshot(
   }
   const sessions = [...local.sessions];
   const knownSessions = new Set(local.sessions.map((session) => session.id));
+  for (const meta of remoteSessions?.values() ?? []) {
+    if (knownSessions.has(meta.id)) continue;
+    sessions.push(sessionFromMeta(meta));
+    knownSessions.add(meta.id);
+  }
   for (const [sessionId, sessionEntries] of Object.entries(entriesBySession)) {
     if (knownSessions.has(sessionId)) continue;
     sessions.push(synthesizeSession(sessionId, sessionEntries, deviceNames));
@@ -206,6 +238,10 @@ export class SyncManager extends EventEmitter {
   private serverQuota: QuotaSnapshot | undefined;
   private remoteEntries: UsageEntry[] = [];
   private remoteObservations: QuotaObservation[] = [];
+  /** Session metadata pulled from other devices, keyed by session id. */
+  private remoteSessions = new Map<string, SyncSessionMeta>();
+  /** session id -> end timestamp last uploaded, so only changed sessions are re-sent. */
+  private sentSessionEnd = new Map<string, number>();
   private cursor = 0;
   private ingestedThrough = 0;
   private observedThrough = 0;
@@ -295,7 +331,7 @@ export class SyncManager extends EventEmitter {
   }
 
   mergedSnapshot(local: UsageSnapshot): UsageSnapshot {
-    return mergeRemoteSnapshot(local, this.remoteEntries, this.getDeviceNames());
+    return mergeRemoteSnapshot(local, this.remoteEntries, this.getDeviceNames(), this.remoteSessions);
   }
 
   /** Called by the mod bridge after a reading so the new observation reaches the server quickly. */
@@ -497,26 +533,49 @@ export class SyncManager extends EventEmitter {
       .getLocalObservations()
       .filter((observation) => observation.observedAt > observationCutoff)
       .map((observation) => ({ ...observation, deviceId: device.id }));
-    if (entries.length === 0 && observations.length === 0) return;
+    const sessions = this.changedSessions(snapshot);
+    if (entries.length === 0 && observations.length === 0 && sessions.length === 0) return;
     const plan = this.options.getPlan();
     const entryBatches = chunk(entries, INGEST_BATCH_SIZE);
     const observationBatches = chunk(observations, INGEST_BATCH_SIZE);
-    const requestCount = Math.max(entryBatches.length, observationBatches.length);
+    const sessionBatches = chunk(sessions, 500);
+    const requestCount = Math.max(entryBatches.length, observationBatches.length, sessionBatches.length);
     for (let index = 0; index < requestCount; index += 1) {
       const entryBatch = entryBatches[index] ?? [];
       const observationBatch = observationBatches[index] ?? [];
+      const sessionBatch = sessionBatches[index] ?? [];
       await client.ingest({
         device,
         entries: entryBatch,
         observations: observationBatch,
+        sessions: sessionBatch,
         plan: index === 0 ? plan : undefined,
         cursor: this.cursor,
       });
       for (const entry of entryBatch) this.ingestedThrough = Math.max(this.ingestedThrough, entry.timestamp);
       for (const observation of observationBatch) this.observedThrough = Math.max(this.observedThrough, observation.observedAt);
+      for (const session of sessionBatch) this.sentSessionEnd.set(session.id, session.end);
       this.savePersisted();
       this.emit("state");
     }
+  }
+
+  /** Local sessions whose metadata is new or whose end moved since the last upload. */
+  private changedSessions(snapshot: UsageSnapshot): SyncSessionMeta[] {
+    const changed: SyncSessionMeta[] = [];
+    for (const session of snapshot.sessions) {
+      const sent = this.sentSessionEnd.get(session.id);
+      if (sent !== undefined && sent === session.end) continue;
+      changed.push({
+        id: session.id,
+        title: session.title,
+        projectName: session.projectName,
+        ...(session.cwd !== undefined ? { cwd: session.cwd } : {}),
+        start: session.start,
+        end: session.end,
+      });
+    }
+    return changed;
   }
 
   private async pull(client: SyncClient): Promise<void> {
@@ -525,6 +584,7 @@ export class SyncManager extends EventEmitter {
     if (response.entries.length > 0) {
       this.remoteEntries = mergeEntries(this.remoteEntries, response.entries);
     }
+    for (const session of response.sessions ?? []) this.remoteSessions.set(session.id, session);
     if (response.observations.length > 0) {
       this.remoteObservations = mergeObservations(this.remoteObservations, response.observations);
     }
@@ -563,6 +623,8 @@ export class SyncManager extends EventEmitter {
   private resetRemoteState(): void {
     this.remoteEntries = [];
     this.remoteObservations = [];
+    this.remoteSessions.clear();
+    this.sentSessionEnd.clear();
     this.serverQuota = undefined;
     this.devices = [];
     this.cursor = 0;

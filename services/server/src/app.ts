@@ -26,6 +26,7 @@ import type {
   QuotaObservation,
   TokenCounts,
   CostBreakdown,
+  SyncSessionMeta,
   UsageEntry,
   WindowMode,
 } from "@ccusage/core";
@@ -43,6 +44,10 @@ export const REMOTE_OBSERVATION_LIMIT = 5000;
 /** Guardrails against an oversized (but under 2 MB) batch. */
 const MAX_ENTRIES_PER_INGEST = 20_000;
 const MAX_OBSERVATIONS_PER_INGEST = 50_000;
+const MAX_SESSIONS_PER_INGEST = 2_000;
+const MAX_TITLE_LENGTH = 300;
+const MAX_PROJECT_LENGTH = 200;
+const MAX_CWD_LENGTH = 1_000;
 
 export interface CreateServerOptions {
   /** Path to the SQLite file, or ":memory:" for an ephemeral database. */
@@ -236,6 +241,48 @@ function normalizeObservations(raw: unknown): { observations: QuotaObservation[]
   return { observations };
 }
 
+function normalizeSessionMeta(raw: unknown, index: number): { session: SyncSessionMeta } | { error: string } {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return { error: "sessions[" + index + "] must be an object" };
+  }
+  const value = raw as Record<string, unknown>;
+  const id = typeof value.id === "string" ? value.id.trim() : "";
+  if (id.length === 0 || id.length > 200) {
+    return { error: "sessions[" + index + "].id must be a non-empty string" };
+  }
+  const start = typeof value.start === "number" && Number.isFinite(value.start) ? value.start : undefined;
+  const end = typeof value.end === "number" && Number.isFinite(value.end) ? value.end : undefined;
+  if (start === undefined || end === undefined) {
+    return { error: "sessions[" + index + "].start/end must be timestamps" };
+  }
+  const rawTitle = typeof value.title === "string" ? value.title.trim() : "";
+  const rawProject = typeof value.projectName === "string" ? value.projectName.trim() : "";
+  const cwd = typeof value.cwd === "string" && value.cwd.length > 0 ? value.cwd.slice(0, MAX_CWD_LENGTH) : undefined;
+  return {
+    session: {
+      id,
+      title: (rawTitle.length > 0 ? rawTitle : "会话 " + id.slice(0, 8)).slice(0, MAX_TITLE_LENGTH),
+      projectName: (rawProject.length > 0 ? rawProject : "其他设备").slice(0, MAX_PROJECT_LENGTH),
+      ...(cwd !== undefined ? { cwd } : {}),
+      start: Math.round(start),
+      end: Math.round(end),
+    },
+  };
+}
+
+function normalizeSessions(raw: unknown): { sessions: SyncSessionMeta[] } | { error: string } {
+  if (raw === undefined || raw === null) return { sessions: [] };
+  if (!Array.isArray(raw)) return { error: "sessions must be an array" };
+  if (raw.length > MAX_SESSIONS_PER_INGEST) return { error: "too many sessions (max " + MAX_SESSIONS_PER_INGEST + ")" };
+  const sessions: SyncSessionMeta[] = [];
+  for (let index = 0; index < raw.length; index += 1) {
+    const parsed = normalizeSessionMeta(raw[index], index);
+    if ("error" in parsed) return parsed;
+    sessions.push(parsed.session);
+  }
+  return { sessions };
+}
+
 function normalizePlan(raw: unknown, now: number): PlanInfo | undefined {
   if (!isRecord(raw)) return undefined;
   if (typeof raw.tier !== "string" || raw.tier.trim() === "" || raw.tier.length > 200) return undefined;
@@ -398,6 +445,11 @@ export function createServer(options: CreateServerOptions): CreateServerResult {
       res.status(400).json({ error: observations.error });
       return;
     }
+    const sessions = normalizeSessions(body.sessions);
+    if ("error" in sessions) {
+      res.status(400).json({ error: sessions.error });
+      return;
+    }
     const now = Date.now();
     const requestedDevice = body.device === undefined ? undefined : normalizeDevice(body.device, auth.deviceId);
     if (body.device !== undefined && !requestedDevice) {
@@ -415,6 +467,7 @@ export function createServer(options: CreateServerOptions): CreateServerResult {
     const result = store.transaction(() => {
       const inserted = store.insertEntries(auth.accountId, auth.deviceId, entries.entries);
       const recorded = store.insertObservations(auth.accountId, auth.deviceId, observations.observations);
+      const sessionsAccepted = store.upsertSessions(auth.accountId, auth.deviceId, sessions.sessions);
       if (requestedDevice && requestedDevice.id === auth.deviceId) {
         store.upsertDevice(auth.accountId, { ...requestedDevice, lastSeenAt: now });
       } else {
@@ -422,13 +475,14 @@ export function createServer(options: CreateServerOptions): CreateServerResult {
       }
       if (plan) store.recordPlan(auth.accountId, plan);
       store.pruneObservations(auth.accountId, now - OBSERVATION_RETENTION_MS);
-      return { inserted, recorded, cursor: store.maxEntrySeq(auth.accountId) };
+      return { inserted, recorded, sessionsAccepted, cursor: store.maxEntrySeq(auth.accountId) };
     });
-    const response: { serverTime: number; accepted: number; deduped: number; cursor: number } = {
+    const response: { serverTime: number; accepted: number; deduped: number; cursor: number; sessionsAccepted: number } = {
       serverTime: now,
       accepted: result.inserted.accepted,
       deduped: result.inserted.deduped,
       cursor: result.cursor,
+      sessionsAccepted: result.sessionsAccepted,
     };
     res.json(response);
   });
@@ -464,6 +518,7 @@ export function createServer(options: CreateServerOptions): CreateServerResult {
       entries: remote.map((item) => item.entry),
       observations,
       devices: withSelf(store.devices(auth.accountId), auth.deviceId),
+      sessions: store.peerSessions(auth.accountId, auth.deviceId),
       plan: store.plan(auth.accountId),
       quota,
     });

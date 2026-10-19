@@ -293,6 +293,7 @@ export const LOCAL_DEVICE_KEY = "__self__";
 export interface DeviceUsage {
   requests: number;
   cost: number;
+  hasUnpricedRequests: boolean;
 }
 
 /** Today's per-device usage; local requests have no deviceId. */
@@ -307,10 +308,69 @@ export function deviceTodayStats(entries: readonly UsageEntry[], now: number): M
       current.requests += 1;
       current.cost += costTotal(entry.cost);
     } else {
-      stats.set(key, { requests: 1, cost: costTotal(entry.cost) });
+      stats.set(key, { requests: 1, cost: costTotal(entry.cost), hasUnpricedRequests: !entry.isPriced });
     }
   }
   return stats;
+}
+
+/** Entries that belong to one device; local entries (no deviceId) belong to the self device. */
+export function entriesForDevice(
+  entries: readonly UsageEntry[],
+  device: DeviceInfo,
+  selfDeviceId: string | undefined,
+): UsageEntry[] {
+  const self = device.isSelf === true || (selfDeviceId != null && device.id === selfDeviceId);
+  return entries.filter((entry) => (entry.deviceId != null ? entry.deviceId === device.id : self));
+}
+
+/** Sessions that belong to one device; local sessions (no deviceIds) belong to the self device. */
+export function sessionsForDevice(
+  sessions: readonly SessionSummary[],
+  device: DeviceInfo,
+  selfDeviceId: string | undefined,
+): SessionSummary[] {
+  const self = device.isSelf === true || (selfDeviceId != null && device.id === selfDeviceId);
+  return sessions.filter((session) =>
+    session.deviceIds != null && session.deviceIds.length > 0
+      ? session.deviceIds.includes(device.id)
+      : self,
+  );
+}
+
+export interface DailyUsage {
+  /** Local midnight of the day. */
+  day: number;
+  requests: number;
+  tokens: TokenCounts;
+  cost: number;
+  hasUnpricedRequests: boolean;
+}
+
+/** Per-day usage rows, newest day first. */
+export function dailyUsage(entries: readonly UsageEntry[]): DailyUsage[] {
+  const byDay = new Map<number, DailyUsage>();
+  for (const entry of entries) {
+    const day = startOfDay(entry.timestamp);
+    const current = byDay.get(day);
+    if (current) {
+      current.requests += 1;
+      addTokens(current.tokens, entry.tokens);
+      current.cost += costTotal(entry.cost);
+      current.hasUnpricedRequests = current.hasUnpricedRequests || !entry.isPriced;
+    } else {
+      const tokens = emptyTokens();
+      addTokens(tokens, entry.tokens);
+      byDay.set(day, {
+        day,
+        requests: 1,
+        tokens,
+        cost: costTotal(entry.cost),
+        hasUnpricedRequests: !entry.isPriced,
+      });
+    }
+  }
+  return [...byDay.values()].sort((a, b) => b.day - a.day);
 }
 
 export function deviceStatKey(device: DeviceInfo, selfDeviceId: string | undefined): string {

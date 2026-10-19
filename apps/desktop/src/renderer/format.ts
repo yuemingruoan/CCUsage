@@ -87,6 +87,17 @@ export function timeHMS(ms: number): string {
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 }
 
+/** MM/DD HH:mm */
+export function dateTimeShort(ms: number): string {
+  const d = new Date(ms);
+  return `${pad2(d.getMonth() + 1)}/${pad2(d.getDate())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+/** MM/DD HH:mm – MM/DD HH:mm (or a single timestamp when both are close). */
+export function dateRange(start: number, end: number): string {
+  return dateTimeShort(start) + " – " + dateTimeShort(end);
+}
+
 /** YYYY/MM/DD */
 export function dayLabel(ms: number): string {
   const d = new Date(ms);

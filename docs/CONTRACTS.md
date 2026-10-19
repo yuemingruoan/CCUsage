@@ -169,11 +169,14 @@ Passwords: node:crypto scrypt + salt; tokens: random hex stored sha256.
 - POST /accounts {username,password} -> 201 {account}; 409 exists; 400 invalid.
 - POST /login {username,password,device:{id?,name,platform,appVersion}} -> 200 LoginResponse (upsert device).
 - POST /logout {deviceId} -> 204 revoke token.
-- POST /ingest (auth) SyncIngestRequest -> SyncIngestResponse. Dedupe entries by id per account,
-  observations by (kind,observed_at,resets_at,device_id); upsert device last_seen_at.
+- POST /ingest (auth) SyncIngestRequest -> SyncIngestResponse. Optional `sessions: SyncSessionMeta[]`
+  carries per-session metadata (id/title/projectName/cwd/start/end) so peers can render real titles.
+  Dedupe entries by id per account, observations by (kind,observed_at,resets_at,device_id); upsert
+  device last_seen_at; upsert session metadata.
 - GET /sync?since=<seq>&mode=firstRequest (auth) -> SyncPullResponse: entries from OTHER devices with
-  seq > since tagged deviceId, all devices, server quota computed with buildQuotaSnapshotFromData
-  over account entries+observations, plan = latest reported.
+  seq > since tagged deviceId, `sessions: SyncSessionMeta[]` (peer sessions with real titles and
+  server-computed requests/tokens/cost/models), all devices, server quota computed with
+  buildQuotaSnapshotFromData over account entries+observations, plan = latest reported.
 - GET /state (auth) -> { account, devices, quota, totals:{todayCost,todayRequests,weekCost} }.
 - DELETE /devices/:id -> 204.
 Bodies JSON objects only, reject >2MB with {error} 400. Tests use createServer(dbPath) factory on port 0.

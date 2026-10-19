@@ -17,6 +17,7 @@ import type {
   QuotaKind,
   QuotaObservation,
   ObservationSource,
+  SyncSessionMeta,
   TokenCounts,
   UsageEntry,
 } from "@ccusage/core";
@@ -99,6 +100,22 @@ CREATE TABLE IF NOT EXISTS plan_history (
   fetched_at        INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS plan_history_account ON plan_history (account_id, seq);
+
+-- Session metadata reported by each device, so peers see real titles instead of
+-- synthesized per-device labels.
+CREATE TABLE IF NOT EXISTS sessions (
+  account_id   TEXT NOT NULL,
+  device_id    TEXT NOT NULL,
+  id           TEXT NOT NULL,
+  title        TEXT NOT NULL,
+  project_name TEXT NOT NULL,
+  cwd          TEXT,
+  start        INTEGER NOT NULL,
+  end          INTEGER NOT NULL,
+  updated_at   INTEGER NOT NULL,
+  PRIMARY KEY (account_id, id)
+);
+CREATE INDEX IF NOT EXISTS sessions_account_device ON sessions (account_id, device_id);
 `;
 
 export interface AccountRecord {
@@ -551,6 +568,142 @@ export class SyncStore {
     if (row.session_id !== null && row.session_id !== undefined) observation.sessionId = str(row.session_id);
     if (row.device_id !== null && row.device_id !== undefined) observation.deviceId = str(row.device_id);
     return observation;
+  }
+
+  // MARK: - Sessions
+
+  /** Upsert peer-visible session metadata; the newest report wins. */
+  upsertSessions(accountId: string, deviceId: string, sessions: SyncSessionMeta[]): number {
+    if (sessions.length === 0) return 0;
+    return this.transaction(() => {
+      const upsert = this.db.prepare(
+        `INSERT INTO sessions (account_id, device_id, id, title, project_name, cwd, start, end, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(account_id, id) DO UPDATE SET
+             device_id = excluded.device_id,
+             title = excluded.title,
+             project_name = excluded.project_name,
+             cwd = excluded.cwd,
+             start = excluded.start,
+             end = excluded.end,
+             updated_at = excluded.updated_at`
+      );
+      const now = Date.now();
+      let accepted = 0;
+      for (const session of sessions) {
+        const result = upsert.run(
+          accountId,
+          deviceId,
+          session.id,
+          session.title,
+          session.projectName,
+          session.cwd ?? null,
+          Math.round(session.start),
+          Math.round(session.end),
+          now
+        );
+        accepted += Number(result.changes);
+      }
+      return accepted;
+    });
+  }
+
+  /**
+   * Sessions owned by other devices, with totals aggregated from their entries.
+   * Sessions whose metadata has not arrived yet (older clients) are included from
+   * their entries with a placeholder title, so peer usage is never invisible.
+   */
+  peerSessions(accountId: string, deviceId: string, limit = 2000): SyncSessionMeta[] {
+    const meta = new Map<string, SyncSessionMeta>();
+    const rows = this.db
+      .prepare(
+        "SELECT id, device_id, title, project_name, cwd, start, end FROM sessions WHERE account_id = ? AND device_id <> ? ORDER BY end DESC LIMIT ?"
+      )
+      .all(accountId, deviceId, limit) as SqlRow[];
+    for (const row of rows) {
+      meta.set(str(row.id), {
+        id: str(row.id),
+        title: str(row.title),
+        projectName: str(row.project_name),
+        cwd: str(row.cwd) || undefined,
+        start: num(row.start),
+        end: num(row.end),
+        deviceId: str(row.device_id),
+      });
+    }
+    const aggregates = this.db
+      .prepare(
+        `SELECT session_id,
+                device_id,
+                COUNT(*) AS requests,
+                MIN(timestamp) AS start,
+                MAX(timestamp) AS end,
+                SUM(json_extract(tokens_json, '$.input')) AS input_tokens,
+                SUM(json_extract(tokens_json, '$.output')) AS output_tokens,
+                SUM(json_extract(tokens_json, '$.cacheRead')) AS cache_read,
+                SUM(json_extract(tokens_json, '$.cacheWrite5m')) AS cache_write_5m,
+                SUM(json_extract(tokens_json, '$.cacheWrite1h')) AS cache_write_1h,
+                SUM(json_extract(tokens_json, '$.webSearches')) AS web_searches,
+                SUM(json_extract(cost_json, '$.input')) AS cost_input,
+                SUM(json_extract(cost_json, '$.output')) AS cost_output,
+                SUM(json_extract(cost_json, '$.cacheRead')) AS cost_cache_read,
+                SUM(json_extract(cost_json, '$.cacheWrite')) AS cost_cache_write,
+                SUM(json_extract(cost_json, '$.webSearch')) AS cost_web_search,
+                SUM(CASE WHEN is_priced = 0 THEN 1 ELSE 0 END) AS unpriced,
+                COUNT(DISTINCT agent_id) AS subagents,
+                GROUP_CONCAT(DISTINCT model) AS models
+           FROM entries
+          WHERE account_id = ? AND device_id <> ?
+          GROUP BY session_id, device_id`
+      )
+      .all(accountId, deviceId) as SqlRow[];
+    for (const row of aggregates) {
+      const id = str(row.session_id);
+      const tokens: TokenCounts = {
+        input: num(row.input_tokens),
+        output: num(row.output_tokens),
+        cacheRead: num(row.cache_read),
+        cacheWrite5m: num(row.cache_write_5m),
+        cacheWrite1h: num(row.cache_write_1h),
+        webSearches: num(row.web_searches),
+      };
+      const cost: CostBreakdown = {
+        input: num(row.cost_input),
+        output: num(row.cost_output),
+        cacheRead: num(row.cost_cache_read),
+        cacheWrite: num(row.cost_cache_write),
+        webSearch: num(row.cost_web_search),
+      };
+      const models = str(row.models).split(",").filter((model) => model.length > 0);
+      const existing = meta.get(id);
+      if (existing) {
+        existing.requests = num(row.requests);
+        existing.start = Math.min(existing.start, num(row.start));
+        existing.end = Math.max(existing.end, num(row.end));
+        existing.tokens = tokens;
+        existing.cost = cost;
+        existing.models = models;
+        existing.subagentCount = num(row.subagents);
+        existing.hasUnpricedRequests = num(row.unpriced) > 0;
+        existing.deviceId = existing.deviceId ?? str(row.device_id);
+      } else {
+        meta.set(id, {
+          id,
+          title: "会话 " + id.slice(0, 8),
+          projectName: "其他设备",
+          start: num(row.start),
+          end: num(row.end),
+          deviceId: str(row.device_id),
+          requests: num(row.requests),
+          tokens,
+          cost,
+          models,
+          subagentCount: num(row.subagents),
+          hasUnpricedRequests: num(row.unpriced) > 0,
+        });
+      }
+    }
+    return [...meta.values()].sort((a, b) => b.end - a.end).slice(0, limit);
   }
 
   // MARK: - Plan
